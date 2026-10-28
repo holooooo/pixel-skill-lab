@@ -45,6 +45,7 @@ export function inputTests(lib = presetLibrary()) {
     const b = new Battle(lib); b.humanInput = true;
     const hero = b.addUnit(lib.hero, 0, -4, 0);
     const dummy = b.addUnit(ENEMY_TEMPLATES.dummy, 1, 2, 0);
+    hero.base.critChance = 0; dummy.base.dodge = 0; // 去掉随机暴击/闪避，让伤害对比稳定
     hero.target = dummy; b.input.point = { x: 2, z: 0 };
     return { b, hero, dummy };
   };
