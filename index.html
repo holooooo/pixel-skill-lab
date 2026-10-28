@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>像素技能实验室 · Pixel Skill Lab — Skill Editor & Combat Sandbox</title>
+<meta name="description" content="像素技能实验室：免费在线像素风技能沙盒。时间轴编排技能、触发器→条件→时间轴被动、Noita 式载荷嵌套、Buff 着色器特效，Three.js 实时战斗。 Free browser pixel-art skill sandbox: timeline skill editor, WHEN→IF→THEN passives, Noita-style payloads, buff shader FX." />
+<meta name="keywords" content="像素技能实验室, 技能编辑器, 技能设计, 时间轴, Noita, 游戏策划工具, Buff 特效, Pixel Skill Lab, skill editor, game design sandbox, three.js, DoT, passives, 技能沙盒" />
+<meta name="author" content="holooooo" />
+<meta name="robots" content="index,follow,max-image-preview:large" />
+<meta name="theme-color" content="#140a1e" />
+<link rel="canonical" href="https://pixel-skill-lab.pages.dev/" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="alternate" type="text/plain" href="llm.txt" title="LLM-readable usage guide" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Pixel Skill Lab" />
+<meta property="og:title" content="像素技能实验室 · Pixel Skill Lab" />
+<meta property="og:description" content="Design skills on a timeline, build WHEN→IF→THEN passives, nest Noita-style payloads and give buffs shader effects — live in your browser. 免费在线像素技能沙盒。" />
+<meta property="og:url" content="https://pixel-skill-lab.pages.dev/" />
+<meta property="og:locale" content="zh_CN" />
+<meta property="og:locale:alternate" content="en_US" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="像素技能实验室 · Pixel Skill Lab" />
+<meta name="twitter:description" content="Pixel-art skill sandbox: timeline editor, trigger passives, Noita-style payloads, buff shader FX. Free, in-browser." />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"Pixel Skill Lab","alternateName":"像素技能实验室",
+ "url":"https://pixel-skill-lab.pages.dev/","applicationCategory":"GameApplication","operatingSystem":"Any (modern web browser, WebGL)",
+ "inLanguage":["zh-CN","en"],"isAccessibleForFree":true,"license":"https://www.apache.org/licenses/LICENSE-2.0",
+ "description":"A browser-based pixel-art skill sandbox: timeline skill editor, WHEN→IF→THEN passives, Noita-style payloads, buff shader effects and a live three.js arena.",
+ "codeRepository":"https://github.com/holooooo/pixel-skill-lab","author":{"@type":"Person","name":"holooooo"},
+ "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=ZCOOL+QingKe+HuangYou&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.5/lib/three-vrm.module.min.js"
+} }
+</script>
+</head>
+<body>
+<header id="topbar">
+  <div class="logo-wrap">
+    <a class="home-link" href="https://holooooo.pages.dev" title="返回 HOLOOOOO 主站">← 回到主站</a>
+    <div class="logo"><span class="logo-mark">✦</span> 像素技能实验室 <small>PIXEL SKILL LAB</small></div>
+  </div>
+  <div class="top-actions">
+    <span id="assetStatus" class="chip dim">加载模型中…</span>
+    <button id="btnPause" class="btn" title="P">⏸ 暂停</button>
+    <label class="chip">速度 <input id="timeScale" type="range" min="0.1" max="2" step="0.1" value="1" /><b id="timeScaleV">1.0x</b></label>
+    <button id="btnImport" class="btn">⇩ 从剪贴板导入</button>
+    <button id="btnExportAll" class="btn">⇧ 导出全部</button>
+    <button id="btnReset" class="btn danger">↺ 恢复预设</button>
+    <button id="btnHelp" class="btn">？ 操作说明</button>
+    <button id="btnAgent" class="btn accent glow">🤖 获取 Agent 技能</button>
+    <a id="ghLink" class="btn icon-btn" href="https://github.com/holooooo/pixel-skill-lab" target="_blank" rel="noopener" title="GitHub">
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    </a>
+    <button id="btnLang" class="btn icon-btn" title="Language / 语言">EN</button>
+  </div>
+</header>
+
+<aside id="library">
+  <nav class="tabs" id="libTabs">
+    <button data-tab="active" class="on">技能</button>
+    <button data-tab="passive">被动</button>
+    <button data-tab="buff">Buff</button>
+    <button data-tab="unit">单位/场景</button>
+  </nav>
+  <div class="lib-tools">
+    <input id="libSearch" placeholder="搜索…" />
+    <button id="btnNew" class="btn small accent">＋ 新建</button>
+  </div>
+  <div id="libList" class="lib-list"></div>
+</aside>
+
+<main id="arenaWrap">
+  <div id="overlay"></div>
+  <div id="flash"></div>
+  <div id="hudTop">
+    <div id="meter" class="panel glass"></div>
+  </div>
+  <div id="hudBottom">
+    <div id="heroBars">
+      <div class="bar hp"><i></i><i class="sh"></i><span></span></div>
+      <div class="bar mp"><i></i><span></span></div>
+    </div>
+    <div id="hotbar"></div>
+    <div id="passbar"></div>
+  </div>
+  <div id="log" class="panel glass"></div>
+  <div id="hint">WASD 移动 · 左键选目标 · 右键移动 · 1-8 施法 · Tab 切换目标 · P 暂停</div>
+</main>
+
+<section id="timeline">
+  <div class="tl-head">
+    <div id="tlTitle"></div>
+    <div id="tlFlow"></div>
+    <div class="tl-tools">
+      <button id="btnTry" class="btn accent">▶ 试放</button>
+      <label class="chip">缩放 <input id="tlZoom" type="range" min="60" max="400" value="170" /></label>
+      <label class="chip">吸附 <select id="tlSnap"><option value="0.05">0.05s</option><option value="0.1" selected>0.1s</option><option value="0.25">0.25s</option><option value="0">无</option></select></label>
+    </div>
+  </div>
+  <div class="tl-body">
+    <div id="palette"></div>
+    <div id="tracksWrap"><div id="tracks"></div></div>
+  </div>
+</section>
+
+<aside id="inspector"></aside>
+
+<div id="modal" class="hidden"><div class="modal-card"><h3 id="modalTitle"></h3><div id="modalBody"></div><div class="modal-actions" id="modalActions"></div></div></div>
+<div id="toast"></div>
+
+<noscript>
+  <main style="max-width:720px;margin:40px auto;padding:0 16px;font:16px/1.6 system-ui,sans-serif;color:#eee">
+    <h1>像素技能实验室 · Pixel Skill Lab</h1>
+    <p>A free pixel-art skill sandbox that runs in your browser (JavaScript and WebGL required): timeline skill editor, WHEN→IF→THEN passives, Noita-style payloads and buff shader effects. 需要启用 JavaScript 与 WebGL。</p>
+    <p><a href="llm.txt">Usage guide (llm.txt)</a> · <a href="https://github.com/holooooo/pixel-skill-lab">GitHub</a> · Apache-2.0</p>
+  </main>
+</noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "pixel-skill-lab",
+  "private": true,
+  "type": "module",
+  "description": "Pixel Skill Lab — a visual skill/trigger sandbox with a timeline editor, Noita-style payloads and an agent-friendly CLI.",
+  "bin": {
+    "psl": "tools/psl.mjs"
+  },
+  "scripts": {
+    "test": "node tools/selftest.mjs",
+    "serve": "python3 -m http.server 5178"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://pixel-skill-lab.pages.dev/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/holooooo/pixel-skill-lab.git"
+  }
+}

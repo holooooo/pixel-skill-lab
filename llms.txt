@@ -1,0 +1,117 @@
+# Pixel Skill Lab (像素技能实验室)
+
+> A browser-based pixel-art skill sandbox. Design active skills with a timeline editor, build passives as
+> WHEN → IF → THEN rules, nest skills through Noita-style payloads, give buffs shader effects, and watch it all run
+> live against enemies in a three.js arena. Free, static, no build step, no account.
+> 一个像素风技能沙盒：用时间轴编排技能，用 触发器→条件→时间轴 搭建被动，Noita 式载荷无限嵌套，Buff 可给角色叠加着色器特效。
+
+- Live app: https://pixel-skill-lab.pages.dev/
+- Source: https://github.com/holooooo/pixel-skill-lab
+- License: Apache-2.0
+- Agent skill (SKILL.md) + zero-dependency CLI: https://github.com/holooooo/pixel-skill-lab/tree/main/skills/pixel-skill-lab
+- Languages: 中文 (source) / English (toggle with the EN / 中 button, top right; choice is stored in localStorage `psl-lang`)
+
+## What you can do on the page
+
+1. **Play the arena** (center). WASD moves the hero, left click selects a target, right click moves, keys 1-8 cast the
+   equipped skills, Tab cycles targets, P pauses. Standing near an enemy auto-attacks. The speed slider (top bar) slows
+   time to inspect effects.
+2. **Skill library** (left, tabs *Skills / Passives / Buff / Units·Arena*). Click a card to edit it. Drag a card onto the
+   bottom hotbar (skills, up to 8) or passive bar (up to 6) to equip it. Card buttons: equip, duplicate, delete,
+   export-to-clipboard.
+3. **Timeline editor** (bottom). Drag action blocks from the palette onto tracks; drag horizontally to change the start
+   time, vertically to change track. `← / →` nudge time, `Delete` removes, `Ctrl/⌘+D` duplicates a block.
+   "▶ Test cast" fires the selected skill immediately.
+4. **Inspector** (right). Edit the selected skill, block or buff. Damage is a formula: `base + Σ(ratio × stat)`, with
+   stats such as ATK, max/current/missing HP, armor, magic resist, mana, event amount, **buff stacks** and
+   **buff remaining DoT value**. Live damage preview is shown against the current target.
+5. **Passives** are `WHEN trigger → IF conditions → THEN timeline`. 16 trigger events (on hit, on crit, on damaged,
+   on kill, on cast, buff gained/applied/expired, low HP, shield break, dodge, healed, blink/dash, nearby enemy death,
+   on spawn, every N seconds), 9 condition types (has/lacks buff, HP %, chance, distance, mana %, has shield, casting,
+   stunned). Chain reactions are depth-limited to prevent infinite loops.
+6. **Buffs** (Buff tab). DoT/HoT with tick formula, per-stack stat modifiers, crowd-control flags
+   (stun / silence / root / disarm), and **character shader effects** (`vfx`).
+7. **Units / Arena tab.** Spawn or clear enemies (Training Dummy, Slime, Lava Colossus), toggle enemy aggression,
+   respawn, hero immortality, pixel size and bloom, reset the damage meter.
+8. **Import / export** (top bar). Export one skill (dependent buffs and sub-skills are bundled) or the whole library as
+   JSON; import from clipboard or via a one-click `#import=<base64url JSON>` link. Everything autosaves to the
+   browser's localStorage (`pixel-skill-lab-v1`).
+
+## Core concepts
+
+- **Action blocks** (28): strike, projectile, laser, AoE burst, zone, chain, channel beam, apply/remove buff, shield,
+  heal, blink, dash, knock/pull, self cost, cooldown adjust, cast skill, camera FX, **detonate**, execute, orbit,
+  summon, swap, branch, repeat, spread, cleanse, mana, ...
+- **Payloads (Noita style).** Projectiles can run another skill on *hit*, on *expire*, or on a *timer*; summons, loops
+  and branches call skills too. Payload skills are free-cast from the trigger point and inherit direction; nesting is
+  capped at 8 levels.
+- **Detonate** reads a buff's stack count, deals formula damage × stacks and (optionally) clears the buff.
+- **Settling DoTs** is pure data: a passive on `onHit` (kind = basic attack) running `detonate` with formula row
+  `{ stat: "buffRemain", buff: "burn", src: "target", ratio: 1 }`, radius 0, consume on. The preset passive
+  **Settle Detonation** (`settle`) does this for burn, poison and bleed.
+- **Buff shader effects.** `buff.vfx = [{ type, color?, intensity?, speed? }]`, `type` is one of
+  `glow, flash, bleed, burn, poison, frost, shock`. Several entries stack. Robot and sprite units get a real injected
+  shader; VRM characters fall back to an emissive pulse.
+
+## Data format (JSON, importable)
+
+```json
+{
+  "format": "pixel-skill-lab", "version": 1,
+  "abilities": [{
+    "id": "iceShot", "kind": "active", "name": "冰锥", "icon": "冰", "color": "#6fe3ff",
+    "cooldown": 2, "manaCost": 15, "range": 12, "targeting": "unit",
+    "timeline": [{ "id": "b1", "type": "projectile", "t": 0, "track": 0,
+      "p": { "aim": "target", "style": "frost", "buff": "slow",
+             "formula": { "base": 40, "type": "magic", "canCrit": true, "rows": [{ "src": "caster", "stat": "atk", "ratio": 1 }] } } }]
+  }],
+  "buffs": { "slow": { "id": "slow", "name": "减速", "color": "#6fe3ff", "debuff": true, "duration": 2.5, "maxStacks": 1,
+             "vfx": [{ "type": "frost", "intensity": 0.6 }] } }
+}
+```
+
+Passive: `kind: "passive"`, `trigger: { event, kind?, buff?, pct?, every?, radius? }`, `conditions: [...]`, `icd` (seconds).
+
+## Using it from an LLM / agent
+
+Do not hand-write JSON blindly. Use the CLI in the repo (Node >= 18, no dependencies):
+
+```bash
+node tools/psl.mjs schema                 # all actions, triggers, conditions, formula stats, buff vfx types
+node tools/psl.mjs schema projectile      # one action's parameters, defaults and ranges
+node tools/psl.mjs list --kind passive    # presets to copy
+node tools/psl.mjs new active iceShot --file my.json --name "冰锥"
+node tools/psl.mjs add-block iceShot projectile --file my.json --set style='"frost"' --set buff='"slow"'
+node tools/psl.mjs validate my.json --sim # schema check + headless battle simulation
+node tools/psl.mjs link my.json           # one-click import URL for the user
+npm test                                  # headless self-test of every preset
+```
+
+Install the agent skill: `cp -r skills/pixel-skill-lab ~/.claude/skills/`, then ask, e.g. "use pixel-skill-lab to make a
+shotgun whose pellets split into 8 ice shards on hit". The skill file documents the workflow, formula stats, the
+`vfx` field and recipes.
+
+## Run locally
+
+```bash
+git clone https://github.com/holooooo/pixel-skill-lab && cd pixel-skill-lab
+python3 -m http.server 5178     # open http://localhost:5178
+```
+
+Static files only; three.js and @pixiv/three-vrm load from the jsDelivr CDN, so an internet connection is required.
+
+## Source map
+
+- `index.html`, `css/style.css` – layout and styles
+- `js/main.js` – app shell, input, main loop · `js/editor.js` – library / timeline / inspectors · `js/hud.js` – HUD
+- `js/engine/` – `battle.js` (units, stats, buffs, damage, triggers), `actions.js` (action blocks), `model.js`
+  (stats, formulas, triggers, `VFX_TYPES`)
+- `js/render/` – `arena.js` (three.js scene), `unitfx.js` (buff shader effects), `sprites.js` (procedural pixel art)
+- `js/data/presets.js` – preset skills, passives, buffs, enemies · `js/store.js` – persistence, import/export
+- `js/i18n.js` – zh→en dictionary + MutationObserver translation
+- `tools/psl.mjs` – agent CLI · `tools/selftest.mjs` – headless tests · `skills/pixel-skill-lab/SKILL.md`
+
+## Credits & license
+
+Apache License 2.0 (see LICENSE, NOTICE). Robot model: RobotExpressive by Tomás Laulhé (CC0). Character: VRoid
+AvatarSample (CC0). Pixel art and VFX are procedurally generated. Built with three.js and @pixiv/three-vrm.

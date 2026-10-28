@@ -1,0 +1,9 @@
+Pixel Skill Lab
+Copyright 2026 holooooo
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party components (not bundled; loaded at runtime or credited):
+- three.js and @pixiv/three-vrm - MIT License
+- RobotExpressive by Tomas Laulhe - CC0 1.0
+- VRoid AvatarSample (VRoid Project) - CC0 1.0
