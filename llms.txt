@@ -39,12 +39,17 @@
 
 ## Core concepts
 
-- **Action blocks** (28): strike, projectile, laser, AoE burst, zone, chain, channel beam, apply/remove buff, shield,
+- **Action blocks** (29): strike, projectile, laser, AoE burst, zone, chain, channel beam, apply/remove buff, shield,
   heal, blink, dash, knock/pull, self cost, cooldown adjust, cast skill, camera FX, **detonate**, execute, orbit,
   summon, swap, branch, repeat, spread, cleanse, mana, ...
 - **Payloads (Noita style).** Projectiles can run another skill on *hit*, on *expire*, or on a *timer*; summons, loops
   and branches call skills too. Payload skills are free-cast from the trigger point and inherit direction; nesting is
   capped at 8 levels.
+- **Input blocks (hold / mash / QTE).** The `input` action waits for the player's keys: hold the cast key to charge and
+  release to fire, mash a key N times, or hit a random QTE key (Q/E/R/F) in time. It calls sub-skills on start / each tap /
+  success / failure; those read the live result through formula stats `inputRatio`, `inputCount`, `inputHold` and the
+  `inputScale` / `followInput` params of projectiles and lasers (e.g. a beam that gets thicker the longer you hold). Presets:
+  Charged Fireball, Amplifying Beam, Charged Arrow, Mash Fist, QTE Execute. Enemies and headless sims auto-complete via `auto`.
 - **Detonate** reads a buff's stack count, deals formula damage × stacks and (optionally) clears the buff.
 - **Settling DoTs** is pure data: a passive on `onHit` (kind = basic attack) running `detonate` with formula row
   `{ stat: "buffRemain", buff: "burn", src: "target", ratio: 1 }`, radius 0, consume on. The preset passive

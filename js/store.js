@@ -5,7 +5,7 @@ import { uid } from './engine/model.js';
 
 const KEY = 'pixel-skill-lab-v1';
 const FORMAT = 'pixel-skill-lab';
-export const REF_KEYS = ['ability', 'then', 'else', 'onHit', 'onExpire', 'timerAbility', 'deathAbility'];
+export const REF_KEYS = ['ability', 'then', 'else', 'onHit', 'onExpire', 'timerAbility', 'deathAbility', 'onStart', 'onPress'];
 
 export function freshLibrary() {
   const abilities = {};

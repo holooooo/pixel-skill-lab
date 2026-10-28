@@ -96,6 +96,10 @@ Damage pipeline: raw → crit × critDmg → ×(1+dmgDealtPct) ×(1+dmgTakenPct)
 | Stack & detonate | passive `onHit` + condition `hasBuff other burn stacks 5` → `detonate` |
 | HP-scaling nuke | formula rows `{src:"caster",stat:"maxHp",ratio:0.35}`; pay with `selfCost` (`hp` ratio) |
 | Execute | `execute` threshold 20, formula on `target.missingHp` |
+| Charge-and-release | `input` mode=hold limit=2, `then` → sub-skill whose projectile uses `inputScale` and a formula row `{stat:"inputRatio",ratio:500}` (preset `chargeFireball`) |
+| Beam that thickens while held | `input` mode=hold `onStart` → sub-skill with `laser` `followInput:true`, `inputScale:6` (preset `chargeBeam`) |
+| Mash | `input` mode=mash need=10 `onPress` (per tap) / `then` (made it) / `else` (didn't); formula stat `inputCount` (preset `mashFist`) |
+| QTE | `input` mode=qte key=random limit=1.2 `then` / `else`; `inputRatio` = reaction speed (preset `qteExecute`) |
 
 Always prefer reusing preset buffs (`node tools/psl.mjs schema` lists them) and preset sub-skills; `pack` bundles them automatically.
 
@@ -106,3 +110,21 @@ A buff can paint its holder with built-in shaders: `"vfx": [{ "type", "color"?, 
 defaults to `buff.color`; several entries stack (same type → the strongest wins). Effects scale slightly with stacks.
 VRM characters can't take injected shaders and fall back to an emissive pulse. Presets already use them
 (burn→burn, bleed→bleed, poison→poison, frozen/slow→frost, shock→shock, rage/haste→glow, stun→flash).
+
+## Input blocks (hold-to-charge, mash, QTE)
+
+`input` is a normal timeline block that makes the skill wait for the player's keys. Params: `mode` (`hold` | `mash` | `qte`),
+`key` (`cast` = the key/click that cast the skill, `random` = Q/E/R/F, or `q e r f g " "`; `hold` always uses the cast key),
+`limit` (seconds: charge cap / mash window / QTE window), `need` (taps to succeed, mash), `minRatio` (hold: below this → `else`),
+`auto` (completion used by enemies/headless sims, 0..1), `buff` (applied to self while waiting, e.g. `charging`), and four
+sub-skill hooks: `onStart` (on press — e.g. a held laser), `onPress` (each tap, mash), `then` (success), `else` (fail).
+The sub-skills run with the live input session in their context:
+- formula stats `inputRatio` (0..1; hold = held/limit, mash = taps/need, qte = reaction speed — 1 is instant), `inputCount`, `inputHold`
+  (row `ratio` = value at full input, e.g. `{ "stat": "inputRatio", "ratio": 500 }` = +500 at full charge);
+- `projectile.inputScale` (size & splash × `1 + inputScale × ratio`), `laser.inputScale` (live width, same formula) and
+  `laser.followInput` (laser lives only while the key is held).
+Releasing a hold resolves it; stun/death cancels it with no then/else. Put follow-up blocks in `then`/`else` (blocks after
+the `input` in the same timeline run immediately and see ratio 0). Passives and headless sims auto-complete using `auto`.
+`validate` warns when `input*` values are used in a skill no `input` block reaches. Presets: `chargeFireball`, `chargeBeam`,
+`chargeBow`, `mashFist`, `qteExecute`.
+

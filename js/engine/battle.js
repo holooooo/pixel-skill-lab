@@ -1,5 +1,5 @@
 // 战斗模拟核心：单位、属性、Buff、伤害结算、事件总线与触发器
-import { ACTIONS, blockDur } from './actions.js';
+import { ACTIONS, blockDur, QTE_POOL } from './actions.js';
 import { evalFormula, TRIGGERS } from './model.js';
 
 const NOOP = new Proxy({}, { get: () => () => {} });
@@ -16,7 +16,8 @@ export function abilityDuration(a) {
 export class Battle {
   constructor(lib) {
     this.lib = lib; // { abilities, buffs }
-    this.units = []; this.lasers = []; this.orbits = []; this.projectiles = []; this.zones = []; this.beams = []; this.timers = [];
+    this.units = []; this.lasers = []; this.orbits = []; this.projectiles = []; this.zones = []; this.beams = []; this.timers = []; this.inputs = [];
+    this.humanInput = false; // 浏览器里由 main.js 打开；无头模拟/测试时为 false，输入会按 auto 自动完成
     this.time = 0; this.fx = NOOP; this.hitstopT = 0; this.paused = false;
     this.bounds = { x: 13, z: 8.5 };
     this.input = { mx: 0, mz: 0, point: { x: 0, z: 0 } };
@@ -109,7 +110,7 @@ export class Battle {
     if (target) u.facing = target.x >= u.x ? 1 : -1;
     u.attackT = 0.25;
     const point = opts.point || { ...this.input.point };
-    const ctx = { caster: u, target, point, depth: 0, kind: 'skill', ability: id };
+    const ctx = { caster: u, target, point, depth: 0, kind: 'skill', ability: id, castKey: opts.key };
     this.fx.cast(u, a);
     this.addLog(`${u.name} 施放 【${a.name}】`, a.color);
     this.emit('onCast', { source: u, target, ability: id, depth: 0, kind: 'skill', amount: a.manaCost || 0 });
@@ -130,6 +131,93 @@ export class Battle {
       this.schedule(b.t, () => {
         try { def.run(this, b.p, ctx); } catch (e) { console.error('action failed', b, e); }
       }, ctx);
+    }
+  }
+  // ---------- 输入会话：长按蓄力 / 连续敲击 / QTE ----------
+  // 会话对象同时是 ctx.input：公式与 laser/projectile 通过 ratio/count/hold 实时读取，结束后保持最终值
+  startInput(p, ctx) {
+    const u = ctx.caster;
+    for (const o of this.inputs.filter(s => s.unit === u)) this.endInput(o, null);
+    const mode = p.mode || 'hold';
+    const castToken = ctx.castKey;
+    let token = null;
+    if (mode === 'hold') token = castToken;
+    else if (p.key === 'cast') token = castToken;
+    else if (p.key === 'random') token = 'k' + QTE_POOL[Math.floor(Math.random() * QTE_POOL.length)];
+    else token = 'k' + p.key;
+    const human = this.humanInput && u.ai === 'player' && !!token;
+    const s = { unit: u, p, ctx, mode, token, key: token && token[0] === 'k' ? token.slice(1) : null, human, t: 0, limit: p.limit || 1.5,
+      held: true, hold: 0, count: 0, ratio: 0, done: false, success: null, perfect: false,
+      autoAt: mode === 'hold' ? Math.max(0.05, (p.auto ?? 1) * (p.limit || 1.5)) : (p.limit || 1.5) * 0.5 };
+    ctx.input = s;
+    this.inputs.push(s);
+    if (p.buff) this.applyBuff(u, u, p.buff, 1, ctx, s.limit + 0.5);
+    this.fx.inputStart?.(s);
+    if (p.onStart) this.freeCast(u, p.onStart, { ...ctx, input: s });
+  }
+  // 返回 true = 该按键被当前输入会话消费（不再触发普通施法）
+  inputDown(u, token, repeat = false) {
+    const s = this.inputs.find(x => x.unit === u && x.human && !x.done);
+    if (!s) return false;
+    const mine = token === s.token;
+    if (s.mode === 'qte' && !mine && token[0] === 'k' && QTE_POOL.includes(token.slice(1))) { if (!repeat) this.finishInput(s, false); return true; }
+    if (!mine) return false;
+    if (repeat) return true;
+    if (s.mode === 'mash') {
+      s.count++; s.ratio = Math.min(1, s.count / (s.p.need || 8));
+      this.fx.inputPress?.(s);
+      if (s.p.onPress) this.freeCast(u, s.p.onPress, { ...s.ctx, input: s });
+      if (s.count >= (s.p.need || 8)) this.finishInput(s, true);
+    } else if (s.mode === 'qte') {
+      s.ratio = Math.max(0.2, 1 - s.t / s.limit); s.perfect = s.ratio >= 0.7;
+      this.finishInput(s, true);
+    }
+    return true;
+  }
+  inputUp(u, token) {
+    const s = this.inputs.find(x => x.unit === u && x.human && !x.done && x.mode === 'hold' && x.token === token);
+    if (s) { s.held = false; this.finishInput(s, s.ratio >= (s.p.minRatio || 0)); }
+  }
+  hasInput(u) { return this.inputs.some(x => x.unit === u && !x.done); }
+  finishInput(s, ok) {
+    if (s.done) return;
+    s.success = ok;
+    if (s.mode === 'hold') s.held = false;
+    this.endInput(s, ok);
+  }
+  // ok = null 表示被打断/取代：不触发 then/else
+  endInput(s, ok) {
+    if (s.done) return;
+    s.done = true;
+    const u = s.unit, p = s.p;
+    this.inputs = this.inputs.filter(x => x !== s);
+    if (p.buff) this.removeBuff(u, p.buff, 0);
+    if (u.casting?.ability === s.ctx.ability) u.casting = null;
+    this.fx.inputEnd?.(s, ok);
+    if (ok === null || !u.alive) return;
+    if (s.perfect) this.fx.text(u, 'PERFECT!', '#ffe066');
+    else if (s.mode === 'qte' || s.mode === 'mash') this.fx.text(u, ok ? '成功!' : '失败', ok ? '#4dff9a' : '#ff6b6b');
+    const id = ok ? p.then : p.else;
+    if (id) this.freeCast(u, id, { ...s.ctx, input: s });
+  }
+  updateInputs(dt) {
+    for (const s of [...this.inputs]) {
+      if (s.done) continue;
+      const u = s.unit;
+      if (!u.alive || this.hasFlag(u, 'stun') || (this.hasFlag(u, 'silence') && s.mode !== 'hold')) { this.endInput(s, null); continue; }
+      s.t += dt;
+      if (s.mode === 'hold') {
+        if (s.held) s.hold += dt;
+        s.ratio = Math.min(1, s.hold / s.limit);
+        if (!s.human && s.t >= s.autoAt) { this.finishInput(s, s.ratio >= (s.p.minRatio || 0)); continue; }
+        if (s.hold >= s.limit) this.finishInput(s, s.ratio >= (s.p.minRatio || 0));
+      } else if (!s.human) {
+        if (s.t >= s.autoAt) {
+          const a = s.p.auto ?? 1;
+          if (s.mode === 'mash') { s.count = Math.round((s.p.need || 8) * a); s.ratio = Math.min(1, s.count / (s.p.need || 8)); this.finishInput(s, s.count >= (s.p.need || 8)); }
+          else { s.ratio = a; s.perfect = a >= 0.7; this.finishInput(s, a >= 0.5); }
+        }
+      } else if (s.t >= s.limit) this.finishInput(s, false);
     }
   }
   reduceCooldown(u, id, amount) {
@@ -575,6 +663,7 @@ export class Battle {
     this.tickLaser(L);
     L.tickT = o.tick;
   }
+  laserWidth(L) { return L.p.width * (1 + (L.p.inputScale || 0) * (L.ctx.input?.ratio || 0)); }
   laserGeom(L) {
     const c = L.owner, p = L.p;
     const from = L.from || { x: c.x, z: c.z };
@@ -591,7 +680,7 @@ export class Battle {
       const along = rx * dx + rz * dz;
       if (along < 0 || along > p.length + e.radius) continue;
       const perp = Math.abs(rx * dz - rz * dx);
-      if (perp <= p.width * 0.5 + e.radius * 0.8) hits.push({ e, along });
+      if (perp <= this.laserWidth(L) * 0.5 + e.radius * 0.8) hits.push({ e, along });
     }
     hits.sort((a, b) => a.along - b.along);
     let len = p.length;
@@ -602,6 +691,7 @@ export class Battle {
     const tx = dx > 0 ? (bx - from.x) / dx : dx < 0 ? (-bx - from.x) / dx : Infinity;
     const tz = dz > 0 ? (bz - from.z) / dz : dz < 0 ? (-bz - from.z) / dz : Infinity;
     len = Math.min(len, tx, tz);
+    L.width = this.laserWidth(L);
     L.len = len; L.fx = from.x; L.fz = from.z; L.ex = from.x + dx * len; L.ez = from.z + dz * len;
     return list.map(h => h.e);
   }
@@ -621,7 +711,7 @@ export class Battle {
     for (const L of this.lasers) {
       if (L.dead) continue;
       L.t += dt;
-      if (!L.owner.alive || this.hasFlag(L.owner, 'stun') || L.t >= Math.max(0.12, L.p.duration)) { L.dead = true; continue; }
+      if (!L.owner.alive || this.hasFlag(L.owner, 'stun') || L.t >= Math.max(0.12, L.p.duration) || (L.p.followInput && L.ctx.input?.done)) { L.dead = true; continue; }
       if (L.p.duration > 0) {
         L.tickT -= dt;
         if (L.tickT <= 0) { L.tickT += L.p.tick; this.tickLaser(L); } else this.laserGeom(L);
@@ -694,6 +784,7 @@ export class Battle {
       }
     }
 
+    this.updateInputs(dt);
     for (const u of this.units) this.updateUnit(u, dt);
     this.separate();
     this.updateProjectiles(dt);

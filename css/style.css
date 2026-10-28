@@ -329,3 +329,16 @@ input[type=range]:focus { box-shadow: none; }
   .bar { width: 130px; }
   #hint { display: none; }
 }
+
+/* 输入会话提示：蓄力 / 连打 / QTE */
+#inputPrompt { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+#inputPrompt.hidden { display: none; }
+#inputPrompt .ip-key { min-width: 56px; padding: 12px 16px; text-align: center; font: 22px var(--pix, monospace); color: #fff; background: #140a2ee6; border: 3px solid #ffd166; box-shadow: 0 0 22px #ffd16688, inset 0 0 12px #ffd16644; }
+#inputPrompt[data-mode="mash"] .ip-key { animation: ipPulse .18s ease-in-out infinite alternate; }
+#inputPrompt .ip-ring { position: absolute; top: -26px; width: 104px; height: 104px; display: none; }
+#inputPrompt[data-mode="qte"] .ip-ring { display: block; }
+#inputPrompt .ip-ring i { display: block; width: 100%; height: 100%; border: 4px solid #ff7a1a; border-radius: 50%; box-shadow: 0 0 16px #ff7a1a99; }
+#inputPrompt .ip-label { font: 10px var(--pix, monospace); color: #ffe2b0; text-shadow: 1px 1px 0 #000; }
+#inputPrompt .ip-bar { width: 160px; height: 8px; background: #0008; border: 2px solid #ffd166aa; }
+#inputPrompt .ip-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ff7a1a, #ffe066); }
+@keyframes ipPulse { to { transform: scale(1.14); } }

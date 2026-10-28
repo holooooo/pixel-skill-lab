@@ -1,5 +1,5 @@
 // 编辑器：技能库、时间轴、检查器
-import { ACTIONS, defaultParams, blockDur, TARGETS } from './engine/actions.js';
+import { ACTIONS, defaultParams, blockDur, TARGETS, INPUT_MODES } from './engine/actions.js';
 import { abilityDuration } from './engine/battle.js';
 import { TRIGGERS, CONDITIONS, COND_SUBJECTS, SOURCE_KINDS, SCALE_STATS, SCALE_SRC, DMG_TYPES, MOD_KEYS, VFX_TYPES, STAT_DEFS, evalFormula, formulaText, uid } from './engine/model.js';
 import { exportAbilities, copyText } from './store.js';
@@ -49,7 +49,7 @@ function formulaEl(app, f, onChange, preview) {
     (f.rows || []).forEach((r, i) => {
       const row = h('div', { class: 'frow' },
         h('span', {}, '+'),
-        (() => { const n = h('input', { type: 'number', value: r.ratio, step: r.stat === 'buffStacks' ? 1 : 0.05, title: r.stat === 'buffStacks' ? '每层数值' : '系数(1=100%)' }); n.oninput = () => { r.ratio = parseFloat(n.value) || 0; changed(); }; return n; })(),
+        (() => { const n = h('input', { type: 'number', value: r.ratio, step: r.stat === 'buffStacks' || r.stat.startsWith('input') ? 1 : 0.05, title: r.stat === 'buffStacks' ? '每层数值' : r.stat.startsWith('input') ? '满值时的数值' : '系数(1=100%)' }); n.oninput = () => { r.ratio = parseFloat(n.value) || 0; changed(); }; return n; })(),
         h('span', {}, '×'),
         selectEl(SCALE_SRC, r.src, v => { r.src = v; changed(); }),
         selectEl(SCALE_STATS, r.stat, v => { r.stat = v; if ((v === 'buffStacks' || v === 'buffRemain') && !r.buff) r.buff = Object.keys(app.lib.buffs)[0]; changed(); redraw(); }),
@@ -245,6 +245,7 @@ function blockSummary(app, b) {
   if (p.formula && (p.formula.base || p.formula.rows?.length)) bits.push(formulaText(p.formula));
   if (p.buff && app.lib.buffs[p.buff]) bits.push(`+${app.lib.buffs[p.buff].name}${p.stacks > 1 ? '×' + p.stacks : ''}`);
   if (p.ability && app.lib.abilities[p.ability]) bits.push(`→${app.lib.abilities[p.ability].name}`);
+  if (b.type === 'input') bits.push(`${INPUT_MODES[p.mode] || p.mode} ${p.limit}s`);
   if (p.ability === '*') bits.push('全部技能');
   if (b.type === 'blink' || b.type === 'dash') bits.push(p.mode);
   if (p.text) bits.push(`"${p.text}"`);

@@ -11,6 +11,9 @@ export const AIMS = { target: '朝向目标', cursor: '朝向鼠标', facing: '�
 export const MOTIONS = { straight: '直线', wave: '波浪', spiral: '螺旋', boomerang: '回旋镖', lob: '抛物线(榴弹)' };
 export const SUMMON_MODES = { totem: '图腾(固定)', minion: '仆从(追击)', drone: '浮游炮(环绕)' };
 export const SUMMON_MODELS = { auto: '自动', slime: '史莱姆', totem: '图腾', drone: '浮游球', robot: '机器人', girl: '少女' };
+export const INPUT_MODES = { hold: '长按蓄力', mash: '连续敲击', qte: 'QTE(限时按键)' };
+export const INPUT_KEYS = { cast: '施法键', random: '随机(Q/E/R/F)', q: 'Q', e: 'E', r: 'R', f: 'F', g: 'G', ' ': '空格' };
+export const QTE_POOL = ['q', 'e', 'r', 'f'];
 export const FX_STYLES = { fire: '烈焰', frost: '冰霜', arcane: '奥术', holy: '圣光', shadow: '暗影', poison: '剧毒', blood: '鲜血', storm: '雷暴' };
 export const STYLE_COLORS = {
   fire: '#ff7a1a', frost: '#6fe3ff', arcane: '#c86bff', holy: '#ffe066',
@@ -76,8 +79,11 @@ export const ACTIONS = {
       { key: 'onExpire', label: '消失触发技能', type: 'ability', def: '' },
       { key: 'timerAbility', label: '定时触发技能', type: 'ability', def: '' },
       { key: 'timerEvery', label: '定时间隔', type: 'number', def: 0.3, min: 0.05, max: 5, step: 0.05 },
-      { ...STYLE('fire'), group: '表现' }, ...BUFF],
+      { key: 'inputScale', label: '尺寸/溅射随输入放大', type: 'number', def: 0, min: 0, max: 6, step: 0.1, group: '表现' },
+      { ...STYLE('fire') }, ...BUFF],
     run(b, p, ctx) {
+      const k = 1 + (p.inputScale || 0) * (ctx.input?.ratio || 0);
+      if (k !== 1) p = { ...p, size: p.size * k, splash: p.splash * k };
       const tgts = b.resolveTargets(p.target, ctx);
       const main = tgts[0];
       const c = ctx.caster;
@@ -110,6 +116,8 @@ export const ACTIONS = {
       { key: 'ramp', label: '每跳增幅', type: 'number', def: 0.03, min: 0, max: 1, step: 0.01 },
       { key: 'pierce', label: '贯穿所有敌人', type: 'bool', def: true },
       { key: 'knock', label: '击退', type: 'number', def: 0, min: -3, max: 3, step: 0.1 },
+      { key: 'followInput', label: '随输入持续(松手即停)', type: 'bool', def: false, group: '输入' },
+      { key: 'inputScale', label: '宽度随输入变粗', type: 'number', def: 0, min: 0, max: 10, step: 0.1 },
       { key: 'onHit', label: '命中触发技能', type: 'ability', def: '', group: '载荷' },
       { ...STYLE('arcane'), group: '表现' }, ...BUFF],
     dur: p => p.duration,
@@ -402,6 +410,23 @@ export const ACTIONS = {
         else { const d = Math.min(t.mana, p.amount); t.mana -= d; ctx.caster.mana = Math.min(ctx.caster.base.maxMana || 0, ctx.caster.mana + d); b.fx.lightning(t, ctx.caster, 'arcane'); }
       }
     },
+  },
+  input: {
+    label: '输入(蓄力/连打/QTE)', icon: '⌨', color: '#ffd166', cat: '机制',
+    params: [
+      { key: 'mode', label: '模式', type: 'select', options: INPUT_MODES, def: 'hold' },
+      { key: 'key', label: '按键(连打/QTE)', type: 'select', options: INPUT_KEYS, def: 'cast' },
+      { key: 'limit', label: '时限/蓄力上限(秒)', type: 'number', def: 1.5, min: 0.2, max: 10, step: 0.1 },
+      { key: 'need', label: '目标敲击次数(连打)', type: 'number', def: 8, min: 1, max: 60, step: 1 },
+      { key: 'minRatio', label: '成功所需最小比例(蓄力)', type: 'number', def: 0, min: 0, max: 1, step: 0.05 },
+      { key: 'auto', label: '自动完成度(AI/模拟)', type: 'number', def: 1, min: 0, max: 1, step: 0.05 },
+      { key: 'buff', label: '输入期间自身Buff', type: 'buff', def: '', group: '联动' },
+      { key: 'onStart', label: '开始时释放', type: 'ability', def: '' },
+      { key: 'onPress', label: '每次敲击释放(连打)', type: 'ability', def: '' },
+      { key: 'then', label: '成功则释放', type: 'ability', def: '' },
+      { key: 'else', label: '失败则释放', type: 'ability', def: '' }],
+    dur: p => p.limit,
+    run(b, p, ctx) { b.startInput(p, ctx); },
   },
   vfx: {
     label: '镜头特效', icon: '☄', color: '#ffffff', cat: '机制',

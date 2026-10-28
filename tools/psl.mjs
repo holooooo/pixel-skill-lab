@@ -7,7 +7,7 @@ import { abilityDuration } from '../js/engine/battle.js';
 import { presetLibrary, simulate } from './selftest.mjs';
 
 const FORMAT = 'pixel-skill-lab';
-const REF_KEYS = ['ability', 'then', 'else', 'onHit', 'onExpire', 'timerAbility', 'deathAbility'];
+const REF_KEYS = ['ability', 'then', 'else', 'onHit', 'onExpire', 'timerAbility', 'deathAbility', 'onStart', 'onPress'];
 const SITE = process.env.PSL_SITE || 'https://pixel-skill-lab.pages.dev';
 const argv = process.argv.slice(2);
 const flags = {}; const pos = [];
@@ -123,6 +123,15 @@ function validate(pack) {
   }
   // 引用环检测（自引用合法但受 8 层深度限制，提示一下）
   for (const a of pack.abilities) for (const b of a.timeline || []) for (const k of REF_KEYS) if (b.p?.[k] === a.id) warn(`ability:${a.id}`, `${b.type}.${k} 引用了自身：会递归到深度上限 8 层`);
+  // 输入数值（inputRatio/Count/Hold、inputScale）只在由 input 块调用的技能里有值，其它地方恒为 0
+  const reach = new Set(), q = [];
+  for (const a of Object.values(lib.abilities)) for (const b of a.timeline || []) if (b.type === 'input') for (const k of ['onStart', 'onPress', 'then', 'else']) if (b.p?.[k]) q.push(b.p[k]);
+  while (q.length) { const id = q.pop(); if (reach.has(id) || !lib.abilities[id]) continue; reach.add(id); for (const b of lib.abilities[id].timeline || []) for (const k of REF_KEYS) if (typeof b.p?.[k] === 'string' && b.p[k]) q.push(b.p[k]); }
+  for (const a of pack.abilities) {
+    const usesInput = (a.timeline || []).some(b => JSON.stringify(b.p || {}).includes('"stat":"input') || b.p?.inputScale > 0 || b.p?.followInput);
+    const hasInputBlock = (a.timeline || []).some(b => b.type === 'input');
+    if (usesInput && !reach.has(a.id) && !hasInputBlock) warn(`ability:${a.id}`, '使用了 inputRatio/inputCount/inputHold/inputScale，但没有任何 input 块调用它（then/else/onStart/onPress），这些值恒为 0');
+  }
   return issues;
 }
 

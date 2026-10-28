@@ -17,6 +17,7 @@ startI18n();
 
 const lib = loadLibrary();
 const battle = new Battle(lib);
+battle.humanInput = true;
 const arenaWrap = document.getElementById('arenaWrap');
 const arena = new Arena(arenaWrap, document.getElementById('overlay'), battle);
 
@@ -96,10 +97,10 @@ const app = {
       battle.firePassive(hero, a, t, { source: hero, target: t, amount: 100, depth: 0, kind: 'skill' });
     }
   },
-  castSlot(i) {
+  castSlot(i, token) {
     const id = lib.hero.loadout.skills[i], hero = battle.hero;
     if (!id || !hero) return;
-    if (battle.tryCast(hero, id)) flashSlot(app, i);
+    if (battle.tryCast(hero, id, { key: token })) flashSlot(app, i);
   },
   spawnEnemy(key, x, z, quiet) {
     const t = ENEMY_TEMPLATES[key];
@@ -260,8 +261,10 @@ window.addEventListener('keydown', (e) => {
   if (e.target.matches('input, textarea, select')) return;
   const k = e.key.toLowerCase();
   if (['w', 'a', 's', 'd'].includes(k)) { keys.add(k); moveTarget = null; }
+  // 输入会话（蓄力/连打/QTE）优先消费按键；长按产生的重复事件也被吞掉
+  if (!e.metaKey && !e.ctrlKey && battle.hero && battle.inputDown(battle.hero, 'k' + k, e.repeat)) { e.preventDefault(); return; }
   const si = SLOT_KEYS.indexOf(e.key);
-  if (si >= 0 && !e.metaKey && !e.ctrlKey) { app.castSlot(si); e.preventDefault(); }
+  if (si >= 0 && !e.metaKey && !e.ctrlKey) { app.castSlot(si, 'k' + k); e.preventDefault(); }
   if (k === 'tab') {
     e.preventDefault();
     const hero = battle.hero, en = battle.enemiesOf(hero).sort((a, b) => battle.dist(hero, a) - battle.dist(hero, b));
@@ -269,8 +272,8 @@ window.addEventListener('keydown', (e) => {
   }
   if (k === 'p') togglePause();
 });
-window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
-window.addEventListener('blur', () => keys.clear());
+window.addEventListener('keyup', (e) => { const k = e.key.toLowerCase(); keys.delete(k); if (battle.hero) battle.inputUp(battle.hero, 'k' + k); });
+window.addEventListener('blur', () => { keys.clear(); const h = battle.hero; if (h) for (const s of [...battle.inputs]) if (s.unit === h) battle.inputUp(h, s.token); });
 const canvas = arena.renderer.domElement;
 canvas.addEventListener('pointermove', (e) => { battle.input.point = arena.pick(e.clientX, e.clientY).point; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());

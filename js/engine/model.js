@@ -33,6 +33,7 @@ export const VFX_TYPES = {
 export const SCALE_STATS = {
   atk: '攻击力', maxHp: '最大生命', hp: '当前生命', missingHp: '已损生命',
   armor: '护甲', res: '魔抗', mana: '当前法力', eventAmount: '事件数值', buffStacks: 'Buff层数', buffRemain: 'Buff剩余跳伤',
+  inputRatio: '输入比例(0~1)', inputCount: '输入敲击数', inputHold: '输入按住秒数',
 };
 export const SCALE_SRC = { caster: '施法者', target: '目标' };
 export const DMG_TYPES = { physical: '物理', magic: '魔法', true: '真实' };
@@ -89,6 +90,9 @@ export function evalFormula(f, ctx, battle) {
 
 function scaleValue(r, u, ctx, battle) {
   if (r.stat === 'eventAmount') return ctx.event?.amount || 0;
+  if (r.stat === 'inputRatio') return ctx.input?.ratio || 0;
+  if (r.stat === 'inputCount') return ctx.input?.count || 0;
+  if (r.stat === 'inputHold') return ctx.input?.hold || 0;
   if (!u) return 0;
   switch (r.stat) {
     case 'hp': return u.hp;
@@ -105,14 +109,14 @@ export function formulaText(f) {
   const parts = [];
   if (f.base) parts.push(String(f.base));
   for (const r of f.rows || []) {
-    const s = r.stat === 'buffStacks' ? `${r.buff}层` : r.stat === 'buffRemain' ? `${r.buff}剩余跳伤` : SCALE_STATS[r.stat];
+    const s = r.stat.startsWith('input') ? SCALE_STATS[r.stat] : r.stat === 'buffStacks' ? `${r.buff}层` : r.stat === 'buffRemain' ? `${r.buff}剩余跳伤` : SCALE_STATS[r.stat];
     const src = r.stat === 'eventAmount' ? '' : (r.src === 'target' ? '目标' : '');
     parts.push(`${fmtRatio(r.ratio, r.stat)}${src}${s}`);
   }
   return (parts.join(' + ') || '0') + ` [${DMG_TYPES[f.type] || ''}]`;
 }
 function fmtRatio(r, stat) {
-  if (stat === 'buffStacks') return `${r}×`;
+  if (stat === 'buffStacks' || stat.startsWith('input')) return `${r}×`;
   return `${Math.round(r * 100)}%`;
 }
 

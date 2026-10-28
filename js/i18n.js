@@ -101,6 +101,13 @@ const DICT = {
   '为持有者的模型叠加内置着色器：辉光/闪烁/流血/燃烧/毒雾/冰霜/电弧。依次为 类型、颜色、强度、速度；可叠加多个。VRM 角色退化为自发光脉冲。': 'Overlays built-in shaders on the holder: glow / flash / bleed / burn / toxic / frost / arc. Fields: type, color, intensity, speed; stack several. VRM characters fall back to an emissive pulse.',
   '最多': 'max ', '层': ' stacks', '跳伤': 'DoT', '跳疗': 'HoT',
   'Buff剩余跳伤': 'Buff remaining ticks', '结算引爆': 'Settle Detonation',
+  '输入(蓄力/连打/QTE)': 'Input (Charge/Mash/QTE)', '输入': 'Input', '联动': 'Links', '长按蓄力': 'Hold to charge', '连续敲击': 'Mash', 'QTE(限时按键)': 'QTE (timed key)',
+  '施法键': 'Cast key', '随机(Q/E/R/F)': 'Random (Q/E/R/F)', '空格': 'Space', '按键(连打/QTE)': 'Key (mash/QTE)', '时限/蓄力上限(秒)': 'Time limit / charge cap (s)',
+  '目标敲击次数(连打)': 'Taps needed (mash)', '成功所需最小比例(蓄力)': 'Min charge to succeed (hold)', '自动完成度(AI/模拟)': 'Auto completion (AI / sim)',
+  '输入期间自身Buff': 'Self buff while inputting', '开始时释放': 'Cast on start', '每次敲击释放(连打)': 'Cast on each tap (mash)', '成功则释放': 'Cast on success', '失败则释放': 'Cast on failure',
+  '尺寸/溅射随输入放大': 'Size / splash grow with input', '随输入持续(松手即停)': 'Lasts while held (stops on release)', '宽度随输入变粗': 'Width grows with input',
+  '输入比例(0~1)': 'Input ratio (0–1)', '输入敲击数': 'Input taps', '输入按住秒数': 'Input hold (s)', '满值时的数值': 'Value at full input', '蓄力中': 'Charging',
+  '按住蓄力': 'Hold to charge', '连续敲击!': 'Mash!', '按下!': 'Press!', '成功!': 'Success!', '失败': 'Failed', '输入期间': 'while inputting',
   // 弹窗
   '操作说明': 'Help', '从剪贴板导入技能': 'Import skills from clipboard', '在此粘贴导出的技能 JSON…': 'Paste exported skill JSON here…',
   '支持单个技能、多个技能（含其依赖的 Buff 与子技能）或整库导出数据。ID 冲突时会自动改名，不会覆盖你的技能。': 'Accepts a single skill, several skills (with dependent buffs and sub-skills) or a full library export. ID clashes are renamed automatically; nothing of yours is overwritten.',

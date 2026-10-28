@@ -45,7 +45,10 @@ export function buildHud(app) {
       el.append(icon(a));
       el.insertAdjacentHTML('beforeend', `<div class="cd"></div><div class="cdt"></div><span class="cost">${a.manaCost || ''}</span>`);
       el.title = `${a.name}\n${a.desc || ''}`;
-      el.onclick = () => app.castSlot(i);
+      // 鼠标点击同样走输入会话：按下施法/敲击，松开结束蓄力
+      el.onpointerdown = (e) => { if (e.button !== 0) return; const hero = app.battle.hero; if (hero && app.battle.inputDown(hero, 'm' + i)) return; app.castSlot(i, 'm' + i); };
+      const up = () => { const hero = app.battle.hero; if (hero) app.battle.inputUp(hero, 'm' + i); };
+      el.onpointerup = el.onpointerleave = el.onpointercancel = up;
       el.oncontextmenu = (e) => { e.preventDefault(); app.selectAbility(id); };
       el.onmouseenter = () => { app.arena.hover = hoverInfo(a); };
       el.onmouseleave = () => { app.arena.hover = null; };
@@ -54,6 +57,7 @@ export function buildHud(app) {
     hb.append(el);
     app.hud.slots.push({ el, id, cd: el.querySelector('.cd'), cdt: el.querySelector('.cdt'), wasCd: false });
   }
+  if (!document.getElementById('inputPrompt')) document.getElementById('arenaWrap').insertAdjacentHTML('beforeend', '<div id="inputPrompt" class="hidden"><div class="ip-key"></div><div class="ip-ring"><i></i></div><div class="ip-label"></div><div class="ip-bar"><i></i></div></div>');
   for (let i = 0; i < MAX_PASSIVES; i++) {
     const id = lo.passives[i], a = app.lib.abilities[id];
     const el = document.createElement('div');
@@ -80,9 +84,27 @@ export function flashSlot(app, i) {
   s.el.classList.remove('fired'); void s.el.offsetWidth; s.el.classList.add('fired');
 }
 
+const MODE_TXT = { hold: '按住蓄力', mash: '连续敲击!', qte: '按下!' };
+function updateInputPrompt(app, hero) {
+  const el = document.getElementById('inputPrompt');
+  if (!el) return;
+  const s = app.battle.inputs.find(x => x.unit === hero && x.human && !x.done);
+  el.classList.toggle('hidden', !s);
+  if (!s) return;
+  const key = s.token ? (s.token[0] === 'm' ? '🖱' : (s.token.slice(1) === ' ' ? 'SPACE' : s.token.slice(1).toUpperCase())) : '?';
+  el.dataset.mode = s.mode;
+  el.querySelector('.ip-key').textContent = key;
+  el.querySelector('.ip-label').textContent = MODE_TXT[s.mode] + (s.mode === 'mash' ? ` ${s.count}/${s.p.need}` : s.mode === 'hold' ? ` ${Math.round(s.ratio * 100)}%` : '');
+  const left = Math.max(0, 1 - s.t / s.limit);
+  el.querySelector('.ip-bar i').style.width = (s.mode === 'hold' ? s.ratio : s.mode === 'mash' ? s.ratio : left) * 100 + '%';
+  // QTE：外圈随时限收缩，圈越小得分越高
+  el.querySelector('.ip-ring i').style.transform = `scale(${s.mode === 'qte' ? 0.35 + 0.65 * left : 1})`;
+}
+
 export function updateHud(app, dt) {
   const b = app.battle, hero = b.hero;
   if (!hero || !app.hud) return;
+  updateInputPrompt(app, hero);
   for (const s of app.hud.slots) {
     if (!s.id || !s.cd) continue;
     const a = app.lib.abilities[s.id]; if (!a) continue;

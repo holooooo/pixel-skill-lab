@@ -543,6 +543,19 @@ export class Arena {
     }
   }
 
+  // 蓄力/输入期间：粒子向施法者汇聚，越蓄越密
+  updateInputFx(dt) {
+    for (const s of this.battle.inputs) {
+      const u = s.unit; if (!u.alive || s.done) continue;
+      const v = this.views.get(u), c = new THREE.Color(s.mode === 'qte' ? '#ffd166' : STYLE_COLORS[s.ctx?.ability && this.battle.lib.abilities[s.ctx.ability]?.timeline?.find(b => b.p?.style)?.p.style] || '#ffd166');
+      const n = Math.random() < dt * (14 + 70 * s.ratio) ? 1 + (s.ratio > 0.6 ? 1 : 0) : 0;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * 6.28, r = 1.4 - 0.6 * s.ratio, y = (v?.height || 1.8) * rand(0.2, 0.9);
+        this.glow.emit({ x: u.x + Math.cos(a) * r, y, z: u.z + Math.sin(a) * r, vx: -Math.cos(a) * 3, vz: -Math.sin(a) * 3, vy: 0, color: c, intensity: 1.6 + s.ratio * 1.4, life: 0.4, size: 0.1 + 0.1 * s.ratio, drag: 0 });
+      }
+      this.lightReq.push({ x: u.x, z: u.z, color: c, i: 4 + 14 * s.ratio });
+    }
+  }
   updateLasers(dt) {
     const b = this.battle, live = new Set(b.lasers);
     for (const [L, v] of this.lviews) if (!live.has(L)) { this.scene.remove(v); this.lviews.delete(L); }
@@ -560,8 +573,8 @@ export class Arena {
         this.scene.add(v); this.lviews.set(L, v);
       }
       const y = 1.0, len = Math.max(0.1, L.len);
-      const fade = L.p.duration > 0 ? Math.min(1, (Math.max(0.12, L.p.duration) - L.t) / 0.15) : 1 - L.t / 0.12;
-      const w = L.p.width * (0.9 + Math.sin(L.t * 60) * 0.12) * Math.max(0, fade) * Math.min(1, L.t * 12 + 0.3);
+      const fade = L.p.followInput && L.ctx.input ? (L.ctx.input.done ? 0 : 1) : L.p.duration > 0 ? Math.min(1, (Math.max(0.12, L.p.duration) - L.t) / 0.15) : 1 - L.t / 0.12;
+      const w = (L.width ?? L.p.width) * (0.9 + Math.sin(L.t * 60) * 0.12) * Math.max(0, fade) * Math.min(1, L.t * 12 + 0.3);
       const ud = v.userData;
       for (const [m, k] of [[ud.outer, 1], [ud.core, 0.35]]) {
         m.position.set((L.fx + L.ex) / 2, y, (L.fz + L.ez) / 2);
@@ -886,6 +899,7 @@ export class Arena {
     this.updateBeams(dt);
     this.updateOrbits(dt);
     this.updateLasers(dt);
+    this.updateInputFx(dt);
     this.effects = this.effects.filter(e => {
       e.t += dt;
       const k = Math.min(1, e.t / e.life);
