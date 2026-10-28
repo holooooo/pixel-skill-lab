@@ -218,7 +218,7 @@ export class Battle {
     if (!(this.settings.godMode && tgt.team === 0)) tgt.hp -= left;
     else tgt.hp = Math.max(1, tgt.hp - left);
     if (tgt.tpl.immortal) tgt.hp = Math.max(1, tgt.hp);
-    tgt.hurtT = 0.18;
+    tgt.hurtT = kind === 'dot' ? 0.04 : 0.18; // 持续伤害只做极短受击闪白，否则会盖住 Buff 着色特效
     const label = opts.label || (ctx.ability ? this.lib.abilities[ctx.ability]?.name : kind === 'attack' ? '普攻' : '其他');
     this.fx.number(tgt, amt, { crit, type, absorbed, kind });
     if (crit) { this.fx.shake(0.15); this.hitstop(0.04); }

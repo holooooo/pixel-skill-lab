@@ -66,7 +66,7 @@ vec3 unitFx(vec3 nrm, vec3 vpos){
   vec3 wp = vFxW, add = vec3(0.0);
   float fres = pow(1.0 - clamp(abs(dot(normalize(nrm), normalize(vpos))), 0.0, 1.0), 2.5);
   ${KEYS.map((k, i) => `if (uFxI[${i}] > 0.001) { float I = uFxI[${i}], S = uFxS[${i}]; vec3 C = uFxC[${i}]; ${GLSL[k]} }`).join('\n  ')}
-  return add;
+  return min(add * 0.4, vec3(0.8)); // 泛光会放大自发光：整体压低并限幅，避免过曝成白块
 }`;
 
 export function patchMaterial(mat, fx) {
@@ -116,5 +116,6 @@ export function fallbackEmissive(fx, time, out = tmp) {
     }
     out.r += C[i].r * k * w; out.g += C[i].g * k * w; out.b += C[i].b * k * w;
   }
+  out.r = Math.min(0.8, out.r * 0.4); out.g = Math.min(0.8, out.g * 0.4); out.b = Math.min(0.8, out.b * 0.4);
   return out;
 }
