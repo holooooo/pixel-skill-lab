@@ -20,6 +20,23 @@ const battle = new Battle(lib);
 battle.humanInput = true;
 const arenaWrap = document.getElementById('arenaWrap');
 const arena = new Arena(arenaWrap, document.getElementById('overlay'), battle);
+function syncQualityUi() {
+  const q = arena.quality;
+  const sel = document.getElementById('qSelect');
+  if (sel && sel.value !== q.mode) sel.value = q.mode;
+  const panel = document.getElementById('qMode');
+  if (panel && document.activeElement !== panel && panel.value !== q.mode) panel.value = q.mode;
+  const now = document.getElementById('qNow');
+  const label = q.tierLabel();
+  if (now && now.textContent !== label) now.textContent = label;
+  const text = q.statusText();
+  if (now) now.title = text;
+  const st = document.getElementById('qStatus');
+  if (st && st.textContent !== text) st.textContent = text;
+}
+arena.onQuality = syncQualityUi;
+syncQualityUi();
+document.getElementById('qSelect').onchange = (e) => arena.quality.setMode(e.target.value);
 
 const app = {
   lib, battle, arena, enemyTemplates: ENEMY_TEMPLATES, timeScale: 1,
@@ -242,6 +259,7 @@ function showHelp() {
   <li><kbd>WASD</kbd> 移动，<kbd>右键</kbd> 点地移动，<kbd>左键</kbd> 选中敌人为目标，<kbd>Tab</kbd> 切换目标</li>
   <li><kbd>1</kbd>-<kbd>8</kbd> 施放技能栏技能；指向型技能以<b>鼠标位置</b>为落点；靠近敌人会自动普攻</li>
   <li><kbd>P</kbd> 暂停，顶栏可调整时间流速（慢动作观察特效）</li>
+  <li>顶栏「视觉」会检测显卡、CPU 和内存，并自动调整像素、泛光、阴影、灯光和粒子。帧数持续偏低时降一级，恢复后升回；也可以手动锁定。</li>
   </ul>
   <h4>编辑技能</h4>
   <ul>
@@ -292,8 +310,10 @@ app.refresh();
 importFromHash();
 window.addEventListener('hashchange', importFromHash);
 let last = performance.now();
+let statsAcc = 0;
 function frame(now) {
-  const real = Math.min(0.05, (now - last) / 1000); last = now;
+  const raw = (now - last) / 1000; last = now;
+  const real = Math.min(0.05, raw);
   const hero = battle.hero;
   let mx = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0), mz = (keys.has('s') ? 1 : 0) - (keys.has('w') ? 1 : 0);
   if (!mx && !mz && moveTarget && hero) {
@@ -307,7 +327,9 @@ function frame(now) {
   arena.render(sdt);
   updateHud(app, real);
   E.updatePlayhead(app);
-  if (Math.random() < 0.2) E.updateLiveStats(app);
+  statsAcc += real;
+  if (statsAcc >= 0.25) { statsAcc = 0; E.updateLiveStats(app); }
+  arena.quality.sample(raw);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -9,6 +9,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { STYLE_COLORS } from '../engine/actions.js';
 import * as S from './sprites.js';
 import { createUnitFx, patchMaterial, updateUnitFx, fallbackEmissive } from './unitfx.js';
+import { createQuality } from './quality.js';
 
 // RobotExpressive by Tomás Laulhé (CC0)，随 three.js 示例发布
 const ROBOT_URLS = [
@@ -18,23 +19,32 @@ const ROBOT_URLS = [
 ];
 
 const GIRL_URL = 'assets/models/girl.vrm';
-const col = (style) => new THREE.Color(STYLE_COLORS[style] || style || '#ffffff');
+const _cols = new Map();
+const col = (style) => {
+  const key = STYLE_COLORS[style] || style || '#ffffff';
+  let c = _cols.get(key);
+  if (!c) { c = new THREE.Color(key); _cols.set(key, c); }
+  return c;
+};
 const rand = (a, b) => a + Math.random() * (b - a);
 const ADD = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide };
+const dynAttr = (array, itemSize) => new THREE.BufferAttribute(array, itemSize).setUsage(THREE.DynamicDrawUsage);
 
-// ---------- 粒子系统（方形像素点） ----------
+// ---------- 粒子系统（方形像素点，只模拟存活的那一段） ----------
 class Particles {
   constructor(scene, max, additive) {
-    this.max = max; this.i = 0;
+    this.max = max; this.cap = max; this.count = 0; this.ring = 0;
+    this.budget = 1e9; this.skipP = 0; this.frameEmits = 0; this.dirtyColor = false;
     const g = new THREE.BufferGeometry();
     this.pos = new Float32Array(max * 3); this.colr = new Float32Array(max * 3);
     this.size = new Float32Array(max); this.alpha = new Float32Array(max);
     this.vel = new Float32Array(max * 3); this.life = new Float32Array(max); this.maxLife = new Float32Array(max);
     this.grav = new Float32Array(max); this.drag = new Float32Array(max); this.size0 = new Float32Array(max); this.shrink = new Uint8Array(max);
-    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(this.colr, 3));
-    g.setAttribute('size', new THREE.BufferAttribute(this.size, 1));
-    g.setAttribute('alpha', new THREE.BufferAttribute(this.alpha, 1));
+    g.setAttribute('position', dynAttr(this.pos, 3));
+    g.setAttribute('color', dynAttr(this.colr, 3));
+    g.setAttribute('size', dynAttr(this.size, 1));
+    g.setAttribute('alpha', dynAttr(this.alpha, 1));
+    g.setDrawRange(0, 0);
     this.mat = new THREE.ShaderMaterial({
       uniforms: { uScale: { value: 300 } },
       vertexShader: `attribute float size; attribute float alpha; attribute vec3 color; varying vec3 vC; varying float vA; uniform float uScale;
@@ -49,31 +59,73 @@ class Particles {
     this.points.frustumCulled = false;
     scene.add(this.points);
   }
+  beginFrame() { this.frameEmits = 0; }
+  setCap(n) {
+    this.cap = Math.max(16, Math.min(this.max, n | 0));
+    if (this.count > this.cap) this.count = this.cap;
+  }
   emit(o) {
-    const i = this.i; this.i = (i + 1) % this.max;
-    const c = o.color, k = o.intensity ?? 1;
-    this.pos[i * 3] = o.x; this.pos[i * 3 + 1] = o.y; this.pos[i * 3 + 2] = o.z;
-    this.vel[i * 3] = o.vx || 0; this.vel[i * 3 + 1] = o.vy || 0; this.vel[i * 3 + 2] = o.vz || 0;
-    this.colr[i * 3] = c.r * k; this.colr[i * 3 + 1] = c.g * k; this.colr[i * 3 + 2] = c.b * k;
+    if (this.skipP > 0 && Math.random() < this.skipP) return;
+    if (this.frameEmits >= this.budget) return;
+    this.frameEmits++;
+    const i = this.count < this.cap ? this.count++ : (this.ring++ % this.cap);
+    const i3 = i * 3, c = o.color, k = o.intensity ?? 1;
+    this.pos[i3] = o.x; this.pos[i3 + 1] = o.y; this.pos[i3 + 2] = o.z;
+    this.vel[i3] = o.vx || 0; this.vel[i3 + 1] = o.vy || 0; this.vel[i3 + 2] = o.vz || 0;
+    this.colr[i3] = c.r * k; this.colr[i3 + 1] = c.g * k; this.colr[i3 + 2] = c.b * k;
     this.life[i] = this.maxLife[i] = o.life || 0.6;
     this.grav[i] = o.gravity ?? 0; this.drag[i] = o.drag ?? 1.5;
     this.size0[i] = this.size[i] = o.size || 0.15; this.shrink[i] = o.shrink === false ? 0 : 1;
     this.alpha[i] = 1;
+    this.dirtyColor = true;
+  }
+  swap(i, j) {
+    if (i === j) return;
+    const s3 = (a) => {
+      const i3 = i * 3, j3 = j * 3;
+      const x = a[i3], y = a[i3 + 1], z = a[i3 + 2];
+      a[i3] = a[j3]; a[i3 + 1] = a[j3 + 1]; a[i3 + 2] = a[j3 + 2];
+      a[j3] = x; a[j3 + 1] = y; a[j3 + 2] = z;
+    };
+    const s1 = (a) => { const t = a[i]; a[i] = a[j]; a[j] = t; };
+    s3(this.pos); s3(this.colr); s3(this.vel);
+    s1(this.size); s1(this.alpha); s1(this.life); s1(this.maxLife);
+    s1(this.grav); s1(this.drag); s1(this.size0); s1(this.shrink);
   }
   update(dt) {
-    for (let i = 0; i < this.max; i++) {
-      if (this.life[i] <= 0) { if (this.alpha[i]) this.alpha[i] = 0; continue; }
-      this.life[i] -= dt;
-      const k = Math.max(0, this.life[i] / this.maxLife[i]);
+    let i = 0;
+    while (i < this.count) {
+      const life = this.life[i] - dt;
+      if (life <= 0) {
+        const last = --this.count;
+        if (i !== last) this.swap(i, last);
+        this.dirtyColor = true;
+        continue;
+      }
+      this.life[i] = life;
+      const k = life / this.maxLife[i];
       const d = Math.max(0, 1 - this.drag[i] * dt);
-      this.vel[i * 3] *= d; this.vel[i * 3 + 1] = this.vel[i * 3 + 1] * d - this.grav[i] * dt; this.vel[i * 3 + 2] *= d;
-      this.pos[i * 3] += this.vel[i * 3] * dt; this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt; this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
-      if (this.pos[i * 3 + 1] < 0.02) { this.pos[i * 3 + 1] = 0.02; this.vel[i * 3 + 1] *= -0.3; }
+      const i3 = i * 3;
+      this.vel[i3] *= d;
+      this.vel[i3 + 1] = this.vel[i3 + 1] * d - this.grav[i] * dt;
+      this.vel[i3 + 2] *= d;
+      this.pos[i3] += this.vel[i3] * dt;
+      this.pos[i3 + 1] += this.vel[i3 + 1] * dt;
+      this.pos[i3 + 2] += this.vel[i3 + 2] * dt;
+      if (this.pos[i3 + 1] < 0.02) { this.pos[i3 + 1] = 0.02; this.vel[i3 + 1] *= -0.3; }
       this.alpha[i] = k < 0.3 ? k / 0.3 : 1;
       this.size[i] = this.shrink[i] ? this.size0[i] * (0.3 + 0.7 * k) : this.size0[i];
+      i++;
     }
-    const a = this.points.geometry.attributes;
-    a.position.needsUpdate = a.color.needsUpdate = a.size.needsUpdate = a.alpha.needsUpdate = true;
+    const geo = this.points.geometry;
+    geo.setDrawRange(0, this.count);
+    if (!this.count) return;
+    const a = geo.attributes;
+    const touch = (attr, n) => { attr.clearUpdateRanges(); attr.addUpdateRange(0, n); attr.needsUpdate = true; };
+    touch(a.position, this.count * 3);
+    touch(a.size, this.count);
+    touch(a.alpha, this.count);
+    if (this.dirtyColor) { touch(a.color, this.count * 3); this.dirtyColor = false; }
   }
 }
 
@@ -83,11 +135,16 @@ export class Arena {
     this.pixel = 3; this.views = new Map(); this.pviews = new Map(); this.lviews = new Map(); this.zviews = new Map(); this.bviews = new Map(); this.oviews = new Map();
     this.effects = []; this.numbers = []; this.plates = new Map(); this.lightReq = [];
     this.shakeAmt = 0; this.hover = null; this.rangeRing = null;
+    this.projPool = [];
+    this.q = { fx: 1, dust: true, torchParticles: true, buffParticles: true, pixel: 3, bloom: 0.9 };
+    this.dynLightN = 8;
     this.initScene();
+    this.quality = createQuality(this);
     this.loadRobot();
     battle.fx = this.makeFx();
-    window.addEventListener('resize', () => this.resize());
-    this.resize();
+    const onResize = () => { this.quality.syncPixel(); this.resize(); };
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(onResize).observe(this.el);
+    else window.addEventListener('resize', onResize);
   }
 
   initScene() {
@@ -103,6 +160,17 @@ export class Arena {
     const cam = this.camera = new THREE.PerspectiveCamera(36, 1.6, 0.1, 100);
     this.camBase = new THREE.Vector3(0, 19, 15.5);
     cam.position.copy(this.camBase); cam.lookAt(0, 0, 0.6);
+
+    this._follow = new THREE.Vector3(); this._shake = new THREE.Vector3();
+    this._proj = new THREE.Vector3(); this._pout = { x: 0, y: 0, vis: true };
+    this._ndc = new THREE.Vector2(); this._hit = new THREE.Vector3();
+    this._floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    this._ba = new THREE.Vector3(); this._bt = new THREE.Vector3(); this._bd = new THREE.Vector3();
+    this._up = new THREE.Vector3(0, 1, 0); this._white = new THREE.Color(1, 1, 1);
+    this._flashC = new THREE.Color();
+    this._frozenVrm = new THREE.Color(0.05, 0.2, 0.45);
+    this._frozenRobot = new THREE.Color(0.1, 0.3, 0.6);
+    this._frozenSprite = new THREE.Color(0.1, 0.35, 0.8);
 
     sc.add(new THREE.HemisphereLight('#6b5cff', '#1a0f24', 0.9));
     sc.add(new THREE.AmbientLight('#2a2040', 0.6));
@@ -146,18 +214,19 @@ export class Arena {
     // 共享几何
     const flat = (g) => { g.rotateX(-Math.PI / 2); return g; };
     this.G = {
-      ring: flat(new THREE.RingGeometry(0.9, 1, 64)),
-      thinRing: flat(new THREE.RingGeometry(0.96, 1, 64)),
-      disc: flat(new THREE.CircleGeometry(1, 48)),
-      slash: new THREE.RingGeometry(0.75, 1.05, 18, 1, 0, Math.PI * 0.85),
+      ring: flat(new THREE.RingGeometry(0.9, 1, 32)),
+      thinRing: flat(new THREE.RingGeometry(0.96, 1, 32)),
+      disc: flat(new THREE.CircleGeometry(1, 24)),
+      slash: new THREE.RingGeometry(0.75, 1.05, 16, 1, 0, Math.PI * 0.85),
       plane: new THREE.PlaneGeometry(1, 1),
-      cyl: new THREE.CylinderGeometry(1, 1, 1, 20, 1, true),
+      cyl: new THREE.CylinderGeometry(1, 1, 1, 10, 1, true),
       ico: new THREE.IcosahedronGeometry(1, 0),
       bubble: new THREE.IcosahedronGeometry(1, 1),
       oct: new THREE.OctahedronGeometry(1, 0),
       cone: new THREE.ConeGeometry(1, 1, 5),
       box: new THREE.BoxGeometry(1, 1, 1),
     };
+    for (const g of Object.values(this.G)) g.userData.shared = true;
     this.T = { glow: S.glowTexture(), rune: S.runeTexture(), noise: S.noiseDiscTexture() };
     this.spriteTex = { slime: S.slimeTexture(), dummy: S.dummyTexture(), totem: S.totemTexture(), robot: S.knightTexture(), girl: S.girlTexture(), drone: S.droneTexture() };
 
@@ -191,6 +260,60 @@ export class Arena {
     this.cssW = w; this.cssH = h;
   }
   setPixel(p) { this.pixel = p; this.resize(); }
+
+  // 视觉等级：像素尺寸、泛光、阴影、灯光数量、粒子上限。灯光 visible 只在换档时改，避免每帧重编译着色器。
+  applyQuality(preset) {
+    const prevShadow = this.renderer.shadowMap.enabled;
+    const prevSize = this.sun.shadow.mapSize.x;
+    this.q = preset;
+    this.pixel = preset.pixel;
+    this.dynLightN = preset.dynLights;
+    this.glow.setCap(preset.glowCap); this.smoke.setCap(preset.smokeCap);
+    this.glow.budget = preset.glowBudget; this.smoke.budget = preset.smokeBudget;
+    const skip = preset.fx >= 0.999 ? 0 : 1 - preset.fx;
+    this.glow.skipP = this.smoke.skipP = skip;
+    this.bloom.strength = preset.bloom;
+    this.bloom.enabled = preset.bloom > 0;
+    this.renderer.shadowMap.enabled = preset.shadows;
+    this.sun.castShadow = preset.shadows;
+    if (preset.shadows && prevSize !== preset.shadowSize) {
+      this.sun.shadow.mapSize.set(preset.shadowSize, preset.shadowSize);
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    }
+    if (prevShadow !== preset.shadows || (preset.shadows && prevSize !== preset.shadowSize)) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.scene.traverse(o => {
+        const mat = o.material;
+        if (!mat) return;
+        if (Array.isArray(mat)) for (const m of mat) m.needsUpdate = true;
+        else mat.needsUpdate = true;
+      });
+    }
+    this.torches.forEach((t, i) => {
+      t.l.visible = i < preset.torches;
+      if (!t.l.visible) t.l.intensity = 0;
+    });
+    this.lights.forEach((l, i) => {
+      l.visible = i < preset.dynLights;
+      if (!l.visible) l.intensity = 0;
+    });
+    this.resize();
+  }
+
+  // 一次性特效的几何大多共用，只释放自己 new 出来的；材质各自持有。
+  releaseObj(obj) {
+    if (!obj) return;
+    this.scene.remove(obj);
+    obj.traverse(o => {
+      if (o.geometry && o.geometry.userData.own && !o.geometry.userData.shared) o.geometry.dispose();
+      const mats = o.material ? [].concat(o.material) : [];
+      for (const m of mats) {
+        if (!m || m.userData.shared || m.userData.disposed) continue;
+        m.userData.disposed = true;
+        m.dispose();
+      }
+    });
+  }
 
   // CC0 VRoid 少女模型（AvatarSample，VRoid 以 CC0 发布），使用 three-vrm 加载并程序化驱动骨骼
   async loadGirl() {
@@ -274,6 +397,7 @@ export class Arena {
       if (u.tpl.tint) mat.color.set(u.tpl.tint);
       const sp = new THREE.Mesh(this.G.plane, mat);
       sp.geometry = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
+      sp.geometry.userData.own = true;
       sp.scale.set(hgt * img.width / img.height, hgt, 1);
       sp.castShadow = true;
       g.add(sp);
@@ -300,7 +424,7 @@ export class Arena {
     if (prev) prev.fadeOut(fade);
     v.anim = name;
   }
-  disposeView(v) { v.release?.(); this.scene.remove(v.g); }
+  disposeView(v) { v.release?.(); this.releaseObj(v.g); }
 
   // VRM 程序化动作：待机呼吸 / 跑步 / 施法 / 冲刺 / 受击 / 倒地
   animateVRM(v, u, dt, frozen) {
@@ -338,7 +462,12 @@ export class Arena {
     v.model.position.y = P.dead * 0.25;
     vrm.update(frozen ? 0 : dt);
     const flash = u.hurtT > 0 ? u.hurtT / 0.18 : 0;
-    for (const m of v.mats) { m.emissive.copy(m.userData.em); if (flash) m.emissive.add(new THREE.Color(flash, flash * 0.6, flash * 0.7)); if (frozen) m.emissive.add(new THREE.Color(0.05, 0.2, 0.45)); }
+    if (flash) this._flashC.setRGB(flash, flash * 0.6, flash * 0.7);
+    for (const m of v.mats) {
+      m.emissive.copy(m.userData.em);
+      if (flash) m.emissive.add(this._flashC);
+      if (frozen) m.emissive.add(this._frozenVrm);
+    }
   }
 
   updateUnits(dt) {
@@ -372,10 +501,11 @@ export class Arena {
         else if (u.moving) this.playAnim(v, 'Running');
         else if (v.anim !== 'Punch' || !v.actions.Punch.isRunning()) this.playAnim(v, 'Idle');
         v.mixer.update(frozen ? 0 : dt);
+        if (flash) this._flashC.setRGB(flash * 1.6, flash * 1.6, flash * 1.6);
         for (const m of v.mats) {
           m.emissive.copy(m.userData.em);
-          if (flash) m.emissive.add(new THREE.Color(flash * 1.6, flash * 1.6, flash * 1.6));
-          if (frozen) m.emissive.add(new THREE.Color(0.1, 0.3, 0.6));
+          if (flash) m.emissive.add(this._flashC);
+          if (frozen) m.emissive.add(this._frozenRobot);
         }
       } else {
         const sp = v.sprite;
@@ -393,7 +523,7 @@ export class Arena {
         const lunge = u.attackT > 0 ? Math.sin(u.attackT / 0.22 * Math.PI) * 0.3 : 0;
         sp.position.x = lunge * face;
         v.mat.emissive.setRGB(flash * 2.2, flash * 2.2, flash * 2.2);
-        if (frozen) v.mat.emissive.add(new THREE.Color(0.1, 0.35, 0.8));
+        if (frozen) v.mat.emissive.add(this._frozenSprite);
         v.mat.opacity = u.alive ? 1 : v.deadT;
       }
       // Buff 着色特效
@@ -411,12 +541,12 @@ export class Arena {
         v.bubble.rotation.y += dt * 0.8; v.bubble.rotation.x += dt * 0.3;
         v.bubble.material.opacity = 0.25 + 0.35 * Math.min(1, sh / (b.stat(u, 'maxHp') * 0.25)) + Math.sin(u.anim * 6) * 0.05;
       }
-      // Buff 光环粒子
-      if (u.alive) for (const bf of u.buffs) {
+      // Buff 光环粒子（低画质关掉，角色着色器仍然保留）
+      if (this.q.buffParticles && u.alive) for (const bf of u.buffs) {
         if (Math.random() < dt * (4 + bf.stacks)) {
           const a = Math.random() * 6.28, r = u.radius * rand(0.3, 1);
           this.glow.emit({ x: u.x + Math.cos(a) * r, y: rand(0.2, v.height), z: u.z + Math.sin(a) * r, vy: rand(0.6, 1.6),
-            color: new THREE.Color(bf.def.color), intensity: 1.4, life: rand(0.4, 0.9), size: 0.12, drag: 0.5 });
+            color: col(bf.def.color), intensity: 1.4, life: rand(0.4, 0.9), size: 0.12, drag: 0.5 });
         }
       }
       // 冲刺拖尾
@@ -431,26 +561,40 @@ export class Arena {
   // ---------- 投射物 / 区域 / 光束 / 环绕 ----------
   updateProjectiles(dt) {
     const b = this.battle, live = new Set(b.projectiles);
-    for (const [p, v] of this.pviews) if (!live.has(p) || p.dead) { this.scene.remove(v); this.pviews.delete(p); }
+    for (const [p, v] of this.pviews) if (!live.has(p) || p.dead) {
+      this.pviews.delete(p);
+      if (this.projPool.length < 48) { this.scene.remove(v); this.projPool.push(v); }
+      else this.releaseObj(v);
+    }
     for (const p of b.projectiles) {
       if (p.dead) continue;
       let v = this.pviews.get(p);
       const c = col(p.style);
       if (!v) {
-        v = new THREE.Group();
-        const core = new THREE.Mesh(this.G.ico, new THREE.MeshBasicMaterial({ color: c.clone().lerp(new THREE.Color('#fff'), 0.6).multiplyScalar(2.2) }));
-        core.scale.setScalar(0.16 * p.size);
-        const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.T.glow, color: c.clone().multiplyScalar(2), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
-        halo.scale.setScalar(0.9 * p.size);
-        v.add(core, halo); v.userData.core = core;
-        this.scene.add(v); this.pviews.set(p, v);
+        v = this.projPool.pop();
+        if (v) {
+          v.userData.core.material.color.copy(c).lerp(this._white, 0.6).multiplyScalar(2.2);
+          v.userData.halo.material.color.copy(c).multiplyScalar(2);
+          v.userData.core.scale.setScalar(0.16 * p.size);
+          v.userData.halo.scale.setScalar(0.9 * p.size);
+          this.scene.add(v);
+        } else {
+          v = new THREE.Group();
+          const core = new THREE.Mesh(this.G.ico, new THREE.MeshBasicMaterial({ color: c.clone().lerp(this._white, 0.6).multiplyScalar(2.2) }));
+          core.scale.setScalar(0.16 * p.size);
+          const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.T.glow, color: c.clone().multiplyScalar(2), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+          halo.scale.setScalar(0.9 * p.size);
+          v.add(core, halo); v.userData.core = core; v.userData.halo = halo;
+          this.scene.add(v);
+        }
+        this.pviews.set(p, v);
       }
       v.position.set(p.x, p.y, p.z);
       v.userData.core.rotation.x += dt * 9; v.userData.core.rotation.y += dt * 7;
       const n = Math.ceil(3 * p.size);
       for (let i = 0; i < n; i++) this.glow.emit({ x: p.x + rand(-0.08, 0.08), y: p.y + rand(-0.08, 0.08), z: p.z + rand(-0.08, 0.08),
         vx: rand(-0.5, 0.5), vy: rand(-0.2, 0.8), vz: rand(-0.5, 0.5), color: c, intensity: 1.8, life: rand(0.15, 0.4), size: rand(0.08, 0.18) * p.size });
-      if (p.style === 'fire' && Math.random() < 0.5) this.smoke.emit({ x: p.x, y: p.y, z: p.z, vy: 0.8, color: new THREE.Color('#2a1a18'), life: 0.6, size: 0.25 * p.size, shrink: false, drag: 2 });
+      if (p.style === 'fire' && Math.random() < 0.5) this.smoke.emit({ x: p.x, y: p.y, z: p.z, vy: 0.8, color: col('#2a1a18'), life: 0.6, size: 0.25 * p.size, shrink: false, drag: 2 });
       this.lightReq.push({ x: p.x, z: p.z, y: p.y, color: c, i: 10 * p.size });
     }
   }
@@ -476,22 +620,21 @@ export class Arena {
       const left = z.p.duration - z.t;
       const fade = Math.min(1, left / 0.4);
       ud.d1.material.opacity = 0.55 * fade; ud.d2.material.opacity = (0.6 + Math.sin(z.t * 8) * 0.25) * fade; ud.edge.material.opacity = fade;
-      const n = Math.ceil(z.radius * z.radius * dt * 10);
+      const n = Math.min(36, Math.ceil(z.radius * z.radius * dt * 10));
       for (let i = 0; i < n; i++) {
         const a = Math.random() * 6.28, r = Math.sqrt(Math.random()) * z.radius;
         this.glow.emit({ x: z.x + Math.cos(a) * r, y: 0.1, z: z.z + Math.sin(a) * r, vy: rand(0.8, 2.4), color: c, intensity: 1.5, life: rand(0.5, 1.1), size: rand(0.08, 0.2), drag: 0.6 });
       }
       if (z.style === 'poison' && Math.random() < dt * 10) {
         const a = Math.random() * 6.28, r = Math.random() * z.radius;
-        this.smoke.emit({ x: z.x + Math.cos(a) * r, y: 0.3, z: z.z + Math.sin(a) * r, vy: 0.5, color: new THREE.Color('#2f6b1a'), life: 1.4, size: 0.8, shrink: false, drag: 1 });
+        this.smoke.emit({ x: z.x + Math.cos(a) * r, y: 0.3, z: z.z + Math.sin(a) * r, vy: 0.5, color: col('#2f6b1a'), life: 1.4, size: 0.8, shrink: false, drag: 1 });
       }
       this.lightReq.push({ x: z.x, z: z.z, color: c, i: 6 + z.radius * 2 });
     }
   }
   updateBeams(dt) {
     const b = this.battle, live = new Set(b.beams);
-    for (const [bm, v] of this.bviews) if (!live.has(bm)) { this.scene.remove(v); this.bviews.delete(bm); }
-    const up = new THREE.Vector3(0, 1, 0);
+    for (const [bm, v] of this.bviews) if (!live.has(bm)) { this.releaseObj(v); this.bviews.delete(bm); }
     for (const bm of b.beams) {
       if (!bm.tgt) continue;
       let v = this.bviews.get(bm);
@@ -503,15 +646,16 @@ export class Arena {
         v.add(outer, core); v.userData = { outer, core };
         this.scene.add(v); this.bviews.set(bm, v);
       }
-      const a = new THREE.Vector3(bm.owner.x, 1.1 * bm.owner.scale, bm.owner.z), t = new THREE.Vector3(bm.tgt.x, 0.9, bm.tgt.z);
-      const dir = t.clone().sub(a), len = dir.length();
+      const a = this._ba.set(bm.owner.x, 1.1 * bm.owner.scale, bm.owner.z), t = this._bt.set(bm.tgt.x, 0.9, bm.tgt.z);
+      const dir = this._bd.subVectors(t, a), len = dir.length();
       v.position.copy(a).addScaledVector(dir, 0.5);
-      v.quaternion.setFromUnitVectors(up, dir.clone().normalize());
+      if (len > 1e-4) dir.multiplyScalar(1 / len);
+      v.quaternion.setFromUnitVectors(this._up, dir);
       const w = bm.p.width * (0.16 + Math.sin(bm.t * 40) * 0.03) * (1 + bm.n * 0.02);
       v.userData.outer.scale.set(w, len, w); v.userData.core.scale.set(w * 0.35, len, w * 0.35);
       for (let i = 0; i < 4; i++) {
         const k = Math.random();
-        this.glow.emit({ x: a.x + dir.x * k, y: a.y + dir.y * k, z: a.z + dir.z * k, vx: rand(-1, 1), vy: rand(-1, 1), vz: rand(-1, 1), color: c, intensity: 2, life: 0.3, size: 0.12 });
+        this.glow.emit({ x: a.x + dir.x * len * k, y: a.y + dir.y * len * k, z: a.z + dir.z * len * k, vx: rand(-1, 1), vy: rand(-1, 1), vz: rand(-1, 1), color: c, intensity: 2, life: 0.3, size: 0.12 });
       }
       for (let i = 0; i < 3; i++) this.glow.emit({ x: t.x, y: t.y, z: t.z, vx: rand(-4, 4), vy: rand(0, 5), vz: rand(-4, 4), color: c, intensity: 2, life: 0.4, size: 0.14, gravity: 8 });
       this.lightReq.push({ x: t.x, z: t.z, color: c, i: 20 });
@@ -520,7 +664,7 @@ export class Arena {
   }
   updateOrbits(dt) {
     const b = this.battle, live = new Set(b.orbits);
-    for (const [o, v] of this.oviews) if (!live.has(o)) { this.scene.remove(v); this.oviews.delete(o); }
+    for (const [o, v] of this.oviews) if (!live.has(o)) { this.releaseObj(v); this.oviews.delete(o); }
     for (const o of b.orbits) {
       if (!o.points) continue;
       let v = this.oviews.get(o);
@@ -547,7 +691,8 @@ export class Arena {
   updateInputFx(dt) {
     for (const s of this.battle.inputs) {
       const u = s.unit; if (!u.alive || s.done) continue;
-      const v = this.views.get(u), c = new THREE.Color(s.mode === 'qte' ? '#ffd166' : STYLE_COLORS[s.ctx?.ability && this.battle.lib.abilities[s.ctx.ability]?.timeline?.find(b => b.p?.style)?.p.style] || '#ffd166');
+      const styleKey = s.mode === 'qte' ? '#ffd166' : (STYLE_COLORS[s.ctx?.ability && this.battle.lib.abilities[s.ctx.ability]?.timeline?.find(b => b.p?.style)?.p.style] || '#ffd166');
+      const v = this.views.get(u), c = col(styleKey);
       const n = Math.random() < dt * (14 + 70 * s.ratio) ? 1 + (s.ratio > 0.6 ? 1 : 0) : 0;
       for (let i = 0; i < n; i++) {
         const a = Math.random() * 6.28, r = 1.4 - 0.6 * s.ratio, y = (v?.height || 1.8) * rand(0.2, 0.9);
@@ -558,7 +703,7 @@ export class Arena {
   }
   updateLasers(dt) {
     const b = this.battle, live = new Set(b.lasers);
-    for (const [L, v] of this.lviews) if (!live.has(L)) { this.scene.remove(v); this.lviews.delete(L); }
+    for (const [L, v] of this.lviews) if (!live.has(L)) { this.releaseObj(v); this.lviews.delete(L); }
     for (const L of b.lasers) {
       if (L.ex === undefined) continue;
       let v = this.lviews.get(L);
@@ -619,8 +764,11 @@ export class Arena {
   bolt(a, b, color, life = 0.18, segs = 9, jitter = 0.35) {
     const pts = []; for (let i = 0; i <= segs; i++) pts.push(new THREE.Vector3());
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    geo.userData.own = true;
+    const innerGeo = geo.clone();
+    innerGeo.userData.own = true;
     const outer = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(2.5), ...ADD }));
-    const inner = new THREE.Line(geo.clone(), new THREE.LineBasicMaterial({ color: new THREE.Color('#fff').multiplyScalar(3), ...ADD }));
+    const inner = new THREE.Line(innerGeo, new THREE.LineBasicMaterial({ color: col('#fff').clone().multiplyScalar(3), ...ADD }));
     const g = new THREE.Group(); g.add(outer, inner);
     const jit = () => {
       for (const ln of [outer, inner]) {
@@ -731,7 +879,7 @@ export class Arena {
             const e = k * k;
             m.position.lerpVectors(from, new THREE.Vector3(x, 0.3, z), e); m.rotation.x += 0.3;
             for (let i = 0; i < 5; i++) A.glow.emit({ x: m.position.x + rand(-0.2, 0.2), y: m.position.y, z: m.position.z + rand(-0.2, 0.2), vy: 1, color: c, intensity: 2.5, life: 0.5, size: rand(0.15, 0.35) });
-            A.smoke.emit({ x: m.position.x, y: m.position.y, z: m.position.z, color: new THREE.Color('#251615'), life: 1, size: 0.7, shrink: false });
+            A.smoke.emit({ x: m.position.x, y: m.position.y, z: m.position.z, color: col('#251615'), life: 1, size: 0.7, shrink: false });
             A.lightReq.push({ x: m.position.x, y: m.position.y, z: m.position.z, color: c, i: 30 });
           });
         }
@@ -797,8 +945,10 @@ export class Arena {
 
   // ---------- DOM 浮字与血条 ----------
   project(x, y, z) {
-    const v = new THREE.Vector3(x, y, z).project(this.camera);
-    return { x: (v.x + 1) / 2 * this.cssW, y: (1 - v.y) / 2 * this.cssH, vis: v.z < 1 };
+    const v = this._proj.set(x, y, z).project(this.camera);
+    const o = this._pout;
+    o.x = (v.x + 1) / 2 * this.cssW; o.y = (1 - v.y) / 2 * this.cssH; o.vis = v.z < 1;
+    return o;
   }
   spawnNumber(u, amt, o = {}) {
     const el = document.createElement('div');
@@ -852,7 +1002,7 @@ export class Arena {
       if (!u.alive) continue;
       pl.el.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%,-100%)`;
       const max = b.stat(u, 'maxHp'), pct = Math.max(0, u.hp / max), sh = b.shieldOf(u);
-      pl.name.textContent = u.name;
+      if (pl.name.textContent !== u.name) pl.name.textContent = u.name;
       pl.hp.style.width = pct * 100 + '%';
       pl.ghostPct = Math.max(pct, pl.ghostPct - 0.01);
       if (pl.ghostPct < pct) pl.ghostPct = pct;
@@ -874,10 +1024,10 @@ export class Arena {
   // ---------- 拾取 ----------
   pick(clientX, clientY) {
     const r = this.renderer.domElement.getBoundingClientRect();
-    const ndc = new THREE.Vector2((clientX - r.left) / r.width * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
-    this.raycaster.setFromCamera(ndc, this.camera);
-    const hit = new THREE.Vector3();
-    this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit);
+    this._ndc.set((clientX - r.left) / r.width * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this._ndc, this.camera);
+    const hit = this._hit;
+    this.raycaster.ray.intersectPlane(this._floor, hit);
     let unit = null, best = 1.4;
     for (const u of this.battle.units) {
       if (!u.alive) continue;
@@ -893,6 +1043,7 @@ export class Arena {
   render(dt) {
     const b = this.battle;
     this.lightReq.length = 0;
+    this.glow.beginFrame(); this.smoke.beginFrame();
     this.updateUnits(dt);
     this.updateProjectiles(dt);
     this.updateZones(dt);
@@ -904,25 +1055,26 @@ export class Arena {
       e.t += dt;
       const k = Math.min(1, e.t / e.life);
       e.fn?.(k);
-      if (k >= 1) { if (e.obj) this.scene.remove(e.obj); return false; }
+      if (k >= 1) { if (e.obj) this.releaseObj(e.obj); return false; }
       return true;
     });
     this.glow.update(dt); this.smoke.update(dt);
-    // 火把
+    // 火把（隐藏的灯保持 visible=false，避免点光源数量来回变导致着色器重编译）
     for (const t of this.torches) {
+      if (!t.l.visible) continue;
       t.l.intensity = 14 + Math.sin(b.time * 13 + t.seed) * 3 + Math.random() * 3;
-      if (Math.random() < dt * 30) this.glow.emit({ x: t.x + rand(-0.2, 0.2), y: 3.6, z: t.z + rand(-0.2, 0.2), vy: rand(1, 2.5), color: new THREE.Color('#ff8a3d'), intensity: 2, life: rand(0.3, 0.7), size: rand(0.1, 0.2), drag: 1 });
+      if (this.q.torchParticles && Math.random() < dt * 30) this.glow.emit({ x: t.x + rand(-0.2, 0.2), y: 3.6, z: t.z + rand(-0.2, 0.2), vy: rand(1, 2.5), color: col('#ff8a3d'), intensity: 2, life: rand(0.3, 0.7), size: rand(0.1, 0.2), drag: 1 });
     }
     // 环境尘埃
-    if (Math.random() < dt * 20) this.glow.emit({ x: rand(-14, 14), y: rand(0.2, 4), z: rand(-10, 10), vx: rand(-0.2, 0.2), vy: rand(0.05, 0.3), color: new THREE.Color('#8a7dff'), intensity: 0.8, life: rand(2, 4), size: 0.06, drag: 0, shrink: false });
+    if (this.q.dust && Math.random() < dt * 20) this.glow.emit({ x: rand(-14, 14), y: rand(0.2, 4), z: rand(-10, 10), vx: rand(-0.2, 0.2), vy: rand(0.05, 0.3), color: col('#8a7dff'), intensity: 0.8, life: rand(2, 4), size: 0.06, drag: 0, shrink: false });
     this.centerRune.rotation.z += dt * 0.05;
     // 动态光
     this.lightReq.sort((x, y) => y.i - x.i);
-    this.lights.forEach((l, i) => {
-      const q = this.lightReq[i];
-      if (!q) { l.intensity = 0; return; }
+    for (let i = 0; i < this.dynLightN; i++) {
+      const l = this.lights[i], q = this.lightReq[i];
+      if (!q) { l.intensity = 0; continue; }
       l.position.set(q.x, q.y ?? 1.2, q.z); l.color.copy(q.color); l.intensity = Math.min(60, q.i);
-    });
+    }
     // 光标 / 目标
     const hero = b.hero;
     this.reticle.position.x = b.input.point.x; this.reticle.position.z = b.input.point.z;
@@ -940,10 +1092,12 @@ export class Arena {
     // 镜头
     this.shakeAmt = Math.max(0, this.shakeAmt - dt * 3);
     const s = this.shakeAmt * this.shakeAmt * 0.6;
-    const follow = hero ? new THREE.Vector3(hero.x * 0.18, 0, hero.z * 0.12) : new THREE.Vector3();
-    this.camera.position.copy(this.camBase).add(follow).add(new THREE.Vector3(rand(-s, s), rand(-s, s), rand(-s, s)));
+    const follow = this._follow;
+    if (hero) follow.set(hero.x * 0.18, 0, hero.z * 0.12); else follow.set(0, 0, 0);
+    this.camera.position.copy(this.camBase).add(follow).add(this._shake.set(rand(-s, s), rand(-s, s), rand(-s, s)));
     this.camera.lookAt(follow.x, 0, 0.6 + follow.z);
-    this.composer.render();
+    if (this.bloom.enabled) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
     this.updatePlates();
     this.updateNumbers(dt);
   }

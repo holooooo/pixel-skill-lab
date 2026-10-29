@@ -17,7 +17,12 @@ const DICT = {
   '● 装备中': '● equipped', '卸下': 'Unequip', '装备': 'Equip', '导出到剪贴板': 'Export to clipboard', '复制一份': 'Duplicate', '删除': 'Delete',
   '生成敌人': 'Spawn enemies', '清空敌人': 'Clear enemies', '重置场景': 'Reset arena', '场景规则': 'Arena rules',
   '敌人主动攻击（触发受击类被动）': 'Enemies attack (fires on-damaged passives)', '敌人死亡后复活': 'Enemies respawn', '英雄无敌（不会死亡）': 'Hero is immortal',
-  '画面': 'Display', '像素尺寸': 'Pixel size', '泛光强度': 'Bloom', '统计': 'Stats', '重置伤害统计': 'Reset damage meter',
+  '画面': 'Display', '像素尺寸': 'Pixel size', '泛光强度': 'Bloom', '视觉': 'Quality', '视觉等级': 'Visual quality',
+  '流畅': 'Smooth', '均衡': 'Balanced', '标准画质': 'High', '极致': 'Ultra',
+  '按本机显卡、核心和内存自动调节画面；帧数不稳时降一级': 'Matches the picture to this GPU, CPU and memory, and drops a level if the frame rate stays low',
+  '自动：按显卡、CPU 和内存选等级，帧数持续偏低就降一级，稳住后再升回。流畅关掉泛光和阴影；极致用更细的像素。': 'Auto picks a level from the GPU, CPU and memory, drops one level if the frame rate stays low, and climbs back when it holds. Smooth turns off bloom and shadows; Ultra uses a finer pixel grid.',
+  '顶栏「视觉」会检测显卡、CPU 和内存，并自动调整像素、泛光、阴影、灯光和粒子。帧数持续偏低时降一级，恢复后升回；也可以手动锁定。': 'The Quality control reads the GPU, CPU and memory, then adjusts pixel size, bloom, shadows, lights and particles. It steps down if the frame rate stays low and steps back up once it holds. You can also lock a level.',
+  '统计': 'Stats', '重置伤害统计': 'Reset damage meter',
   '训练木桩：高血量高回复，适合测试DPS；史莱姆：近战小怪会主动攻击；熔岩巨像：Boss，带范围重击与弹幕技能，可测试护盾/受击/斩杀。':
     'Training Dummy: huge HP & regen, great for DPS tests. Slime: melee mob that attacks you. Lava Colossus: a boss with slams and barrages for testing shields, on-hit passives and executes.',
   // 时间轴
@@ -133,7 +138,10 @@ export function tr(s) {
   return out.replace(/【/g, '[').replace(/】/g, ']').replace(/，/g, ', ').replace(/：/g, ': ').replace(/（/g, ' (').replace(/）/g, ')').replace(/。/g, '. ').replace(/、/g, ', ');
 }
 function translateNode(n) {
-  if (n.nodeType === 3) { const v = n.nodeValue; if (CJK.test(v)) { const t = tr(v); if (t !== v) n.nodeValue = t; } return; }
+  if (n.nodeType === 3) {
+    if (n.parentElement?.closest('[data-noi18n]')) return;
+    const v = n.nodeValue; if (CJK.test(v)) { const t = tr(v); if (t !== v) n.nodeValue = t; } return;
+  }
   if (n.nodeType !== 1) return;
   if (n.matches?.('textarea, [data-noi18n]')) return;
   for (const a of ['title', 'placeholder']) {

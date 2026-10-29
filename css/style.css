@@ -32,6 +32,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chip.dim { color: var(--dim); }
 .chip input[type=range] { width: 80px; accent-color: var(--accent); }
 .chip b { font-family: var(--pix); font-size: 8px; color: var(--accent2); }
+.qchip select { padding: 1px 16px 1px 4px; max-width: 108px; background-color: transparent; }
+.qchip b { min-width: 2.4em; text-align: right; }
 
 /* ---------- 左侧库 ---------- */
 #library { grid-area: lib; background: var(--panel); border-right: 2px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
@@ -324,6 +326,7 @@ input[type=range]:focus { box-shadow: none; }
   .logo { font-size: 16px; } .home-link { display: none; }
   .top-actions { gap: 3px; } .top-actions .btn { padding: 3px 6px; font-size: 11px; }
   .top-actions label.chip { display: none; }
+  .top-actions label.chip.qchip { display: inline-flex; }
   #log { display: none; } #meter { width: 160px; }
   .slot { width: 36px; height: 36px; } .slot .ico { font-size: 15px; } .slot.passive { width: 28px; height: 28px; }
   .bar { width: 130px; }

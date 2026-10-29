@@ -157,10 +157,11 @@ function renderUnitPanel(app, list) {
   const tog = (label, key) => { const c = h('input', { type: 'checkbox', checked: b.settings[key] }); c.onchange = () => { b.settings[key] = c.checked; }; return h('label', { class: 'field', style: { gridTemplateColumns: '20px 1fr' } }, c, label); };
   list.append(tog('敌人主动攻击（触发受击类被动）', 'enemyAggro'), tog('敌人死亡后复活', 'respawn'), tog('英雄无敌（不会死亡）', 'godMode'));
   list.append(h('div', { class: 'lib-group' }, '画面'));
-  const px = numberEl({ min: 1, max: 6, step: 1 }, app.arena.pixel, v => app.arena.setPixel(v));
-  list.append(field('像素尺寸', px));
-  const bl = numberEl({ min: 0, max: 2.5, step: 0.05 }, app.arena.bloom.strength, v => { app.arena.bloom.strength = v; });
-  list.append(field('泛光强度', bl));
+  const qSel = selectEl({ auto: '自动', low: '流畅', medium: '均衡', high: '标准画质', ultra: '极致' }, app.arena.quality.mode, v => app.arena.quality.setMode(v));
+  qSel.id = 'qMode';
+  list.append(field('视觉等级', qSel));
+  list.append(h('p', { id: 'qStatus', class: 'help', 'data-noi18n': '1' }, app.arena.quality.statusText()));
+  list.append(h('p', { class: 'help' }, '自动：按显卡、CPU 和内存选等级，帧数持续偏低就降一级，稳住后再升回。流畅关掉泛光和阴影；极致用更细的像素。'));
   list.append(h('div', { class: 'lib-group' }, '统计'));
   list.append(h('button', { class: 'btn small', onclick: () => b.resetMeter() }, '重置伤害统计'));
   list.append(h('p', { class: 'help' }, '训练木桩：高血量高回复，适合测试DPS；史莱姆：近战小怪会主动攻击；熔岩巨像：Boss，带范围重击与弹幕技能，可测试护盾/受击/斩杀。'));

@@ -6,3 +6,5 @@ node_modules/
 *.zip
 .claude/
 demo/
+promo/out/
+promo/rec/probe.png

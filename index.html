@@ -54,6 +54,17 @@
   </div>
   <div class="top-actions">
     <span id="assetStatus" class="chip dim">加载模型中…</span>
+    <label class="chip qchip" title="按本机显卡、核心和内存自动调节画面；帧数不稳时降一级">
+      视觉
+      <select id="qSelect" aria-label="视觉等级">
+        <option value="auto">自动</option>
+        <option value="low">流畅</option>
+        <option value="medium">均衡</option>
+        <option value="high">标准画质</option>
+        <option value="ultra">极致</option>
+      </select>
+      <b id="qNow" data-noi18n>…</b>
+    </label>
     <button id="btnPause" class="btn" title="P">⏸ 暂停</button>
     <label class="chip">速度 <input id="timeScale" type="range" min="0.1" max="2" step="0.1" value="1" /><b id="timeScaleV">1.0x</b></label>
     <button id="btnImport" class="btn">⇩ 从剪贴板导入</button>
